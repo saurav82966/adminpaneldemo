@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 
-import { ref, set, onDisconnect, onValue } from "firebase/database";
+import { ref, set, onDisconnect, onValue, remove } from "firebase/database";
 import { db } from "./firebase";
 
 import DevicesPage from './components/DevicesPage';
@@ -17,20 +17,28 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 import './App.css';
 
-let sessionInitialized = false;
-
 /* =======================================================
    NAVBAR
 ======================================================= */
 function Navbar() {
   const location = useLocation();
   const [onlineCount, setOnlineCount] = useState(0);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) return;
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsub();
+  }, []);
 
-    const dbPath = localStorage.getItem("dbPath_" + user.uid);
+  useEffect(() => {
+    if (!currentUser) {
+      setOnlineCount(0);
+      return;
+    }
+
+    const dbPath = localStorage.getItem("dbPath_" + currentUser.uid);
     if (!dbPath) return;
 
     const onlineRef = ref(db, "onlineAdmins/" + dbPath);
@@ -39,7 +47,7 @@ function Navbar() {
       const data = snap.val() || {};
       setOnlineCount(Object.keys(data).length);
     });
-  }, [auth.currentUser]);
+  }, [currentUser]);
 
   if (location.pathname === "/login" || location.pathname === "/register") {
     return null;
@@ -70,7 +78,6 @@ function Navbar() {
 
           <button
             onClick={() => {
-              sessionStorage.removeItem("TAB_SESSION_ID");
               auth.signOut();
             }}
             className="nav-link"
@@ -89,69 +96,120 @@ function Navbar() {
   );
 }
 
-
 /* =======================================================
    MAIN APP
 ======================================================= */
 function App() {
-
   const [authLoading, setAuthLoading] = useState(true);
+  const sessionInitializedRef = useRef(false);
+  const cleanupDoneRef = useRef(false);
 
   // Generate UNIQUE TAB ID once
-  if (!sessionStorage.getItem("TAB_SESSION_ID")) {
-    sessionStorage.setItem(
-      "TAB_SESSION_ID",
-      "tab_" + Math.random().toString(36).substring(2)
-    );
-  }
-
-  const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
+  useEffect(() => {
+    if (!sessionStorage.getItem("TAB_SESSION_ID")) {
+      sessionStorage.setItem(
+        "TAB_SESSION_ID",
+        "tab_" + Math.random().toString(36).substring(2) + "_" + Date.now()
+      );
+    }
+  }, []);
 
   useEffect(() => {
-  const unsub = onAuthStateChanged(auth, (user) => {
+    const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
+    
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const dbPath = localStorage.getItem("dbPath_" + user.uid);
+        
+        if (dbPath) {
+          // Clear previous session for this tab before creating new one
+          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
+          
+          // First remove any existing entry for this tab
+          remove(onlineRef).then(() => {
+            // Only set new session if not already initialized for this tab
+            if (!sessionInitializedRef.current) {
+              const info = {
+                email: user.email,
+                uid: user.uid,
+                tabId: TAB_SESSION_ID,
+                browser: navigator.userAgent.substring(0, 50), // Limit length
+                platform: navigator.platform,
+                lastActive: Date.now(),
+                lastUpdated: new Date().toISOString()
+              };
 
-    if (user) {
+              set(onlineRef, info)
+                .then(() => {
+                  console.log("Online status set for tab:", TAB_SESSION_ID);
+                  sessionInitializedRef.current = true;
+                })
+                .catch(console.error);
+
+              // Setup onDisconnect cleanup
+              onDisconnect(onlineRef).remove()
+                .then(() => {
+                  console.log("OnDisconnect handler set for tab:", TAB_SESSION_ID);
+                })
+                .catch(console.error);
+            }
+          }).catch(console.error);
+        }
+      } else {
+        // User logged out - reset the ref
+        sessionInitializedRef.current = false;
+        cleanupDoneRef.current = false;
+      }
+      
+      setAuthLoading(false);
+    });
+
+    // Cleanup function for when component unmounts
+    return () => {
+      unsub();
+      
+      // Only cleanup once when tab/window closes
+      if (!cleanupDoneRef.current && auth.currentUser) {
+        cleanupDoneRef.current = true;
+        const user = auth.currentUser;
+        const dbPath = localStorage.getItem("dbPath_" + user.uid);
+        const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
+        
+        if (dbPath && TAB_SESSION_ID) {
+          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
+          remove(onlineRef).catch(console.error);
+        }
+      }
+    };
+  }, []); // Empty dependency array - runs once on mount
+
+  // Update lastActive periodically for active tab
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const interval = setInterval(() => {
+      const user = auth.currentUser;
+      if (!user) return;
+
       const dbPath = localStorage.getItem("dbPath_" + user.uid);
-
-      if (dbPath) {
-
-        // ❗ STOP DUPLICATE SESSIONS
-        if (sessionInitialized) {
-          setAuthLoading(false);
-          return;
-        }
-        sessionInitialized = true;
-
-        // UNIQUE TAB ID
-        let sessionId = sessionStorage.getItem("TAB_SESSION_ID");
-        if (!sessionId) {
-          sessionId = "tab_" + Math.random().toString(36).substring(2);
-          sessionStorage.setItem("TAB_SESSION_ID", sessionId);
-        }
-
-        const onlineRef = ref(db, `onlineAdmins/${dbPath}/${sessionId}`);
-
-        const info = {
+      const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
+      
+      if (dbPath && TAB_SESSION_ID && sessionInitializedRef.current) {
+        const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
+        set(onlineRef, {
           email: user.email,
           uid: user.uid,
-          tabId: sessionId,
-          browser: navigator.userAgent,
+          tabId: TAB_SESSION_ID,
+          browser: navigator.userAgent.substring(0, 50),
           platform: navigator.platform,
-          lastActive: Date.now()
-        };
-
-        set(onlineRef, info);
-        onDisconnect(onlineRef).remove();
+          lastActive: Date.now(),
+          lastUpdated: new Date().toISOString()
+        }).catch(console.error);
       }
-    }
+    }, 30000); // Update every 30 seconds
 
-    setAuthLoading(false);
-  });
-
-  return () => unsub();
-}, []);
-
-
+    return () => clearInterval(interval);
+  }, []);
 
   if (authLoading) {
     return (
@@ -161,22 +219,17 @@ function App() {
     );
   }
 
-
   return (
     <Router>
       <Navbar />
-
       <main className="main-content">
         <Routes>
-
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-
           <Route path="/" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
           <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
           <Route path="/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
           <Route path="/device/:deviceId" element={<ProtectedRoute><DeviceDetails /></ProtectedRoute>} />
-
           <Route
             path="/online-admins"
             element={
@@ -185,7 +238,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
         </Routes>
       </main>
     </Router>
