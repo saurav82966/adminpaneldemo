@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import React, { useState, useEffect } from "react";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 
@@ -7,6 +7,16 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // ⭐ If user already logged in → redirect to /devices
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate("/devices", { replace: true });
+      }
+    });
+    return () => unsubscribe();
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -27,18 +37,14 @@ export default function Login() {
           type="email"
           className="form-input"
           placeholder="Email"
-          value={email}
           onChange={(e) => setEmail(e.target.value)}
-          required
         />
 
         <input
           type="password"
           className="form-input"
           placeholder="Password"
-          value={password}
           onChange={(e) => setPassword(e.target.value)}
-          required
         />
 
         <button className="btn btn-primary" type="submit">Login</button>
