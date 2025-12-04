@@ -85,14 +85,7 @@ function App() {
             } 
           />
 
-          <Route 
-            path="/send-sms" 
-            element={
-              <ProtectedRoute>
-                <SendSmsPage />
-              </ProtectedRoute>
-            } 
-          />
+       
 
           <Route 
             path="/device/:deviceId" 
