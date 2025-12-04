@@ -17,6 +17,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 import './App.css';
 
+let sessionInitialized = false;
 
 /* =======================================================
    NAVBAR
@@ -107,34 +108,49 @@ function App() {
   const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+  const unsub = onAuthStateChanged(auth, (user) => {
 
-      if (user) {
-        const dbPath = localStorage.getItem("dbPath_" + user.uid);
+    if (user) {
+      const dbPath = localStorage.getItem("dbPath_" + user.uid);
 
-        if (dbPath) {
+      if (dbPath) {
 
-          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
-
-          const info = {
-            email: user.email,
-            uid: user.uid,
-            tabId: TAB_SESSION_ID,
-            browser: navigator.userAgent,
-            platform: navigator.platform,
-            lastActive: Date.now()
-          };
-
-          set(onlineRef, info);
-          onDisconnect(onlineRef).remove();
+        // ❗ STOP DUPLICATE SESSIONS
+        if (sessionInitialized) {
+          setAuthLoading(false);
+          return;
         }
+        sessionInitialized = true;
+
+        // UNIQUE TAB ID
+        let sessionId = sessionStorage.getItem("TAB_SESSION_ID");
+        if (!sessionId) {
+          sessionId = "tab_" + Math.random().toString(36).substring(2);
+          sessionStorage.setItem("TAB_SESSION_ID", sessionId);
+        }
+
+        const onlineRef = ref(db, `onlineAdmins/${dbPath}/${sessionId}`);
+
+        const info = {
+          email: user.email,
+          uid: user.uid,
+          tabId: sessionId,
+          browser: navigator.userAgent,
+          platform: navigator.platform,
+          lastActive: Date.now()
+        };
+
+        set(onlineRef, info);
+        onDisconnect(onlineRef).remove();
       }
+    }
 
-      setAuthLoading(false);
-    });
+    setAuthLoading(false);
+  });
 
-    return () => unsub();
-  }, []);
+  return () => unsub();
+}, []);
+
 
 
   if (authLoading) {
