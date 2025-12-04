@@ -6,6 +6,7 @@ import { auth } from "./firebase";
 import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
 import DeviceDetails from './components/DeviceDetails';
+import OnlineAdmins from "./components/OnlineAdmins";   // ⭐ NEW PAGE
 
 import Login from './components/Login';
 import Register from './components/Register';
@@ -27,8 +28,18 @@ function Navbar() {
         <h1>SMS Admin Panel</h1>
 
         <div className="nav-links">
+
           <Link to="/devices" className="nav-link">Devices</Link>
           <Link to="/sms" className="nav-link">All SMS</Link>
+
+          {/* ⭐ NEW BUTTON — ONLINE ADMINS PAGE */}
+          <Link 
+            to="/online-admins"
+            className="nav-link"
+            style={{ background: "#4caf50", color: "white", padding: "6px 12px", borderRadius: "6px" }}
+          >
+            Online Admins
+          </Link>
 
           {/* LOGOUT BUTTON */}
           <button
@@ -48,7 +59,7 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
-  // ⭐ Pehle check karo Firebase user ready hua ya nahi
+  // ⭐ Firebase user ready hone ka wait
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => {
       setAuthLoading(false);
@@ -57,7 +68,7 @@ function App() {
     return () => unsub();
   }, []);
 
-  // ⭐ Jab tak auth state load ho rahi ho → blank screen or loader
+  // ⭐ Jab tak Firebase auth confirm nahi karta → loader
   if (authLoading) {
     return (
       <div className="loading" style={{ textAlign: "center", marginTop: "80px", fontSize: "22px" }}>
@@ -78,40 +89,50 @@ function App() {
           <Route path="/register" element={<Register />} />
 
           {/* PROTECTED ROUTES */}
-          <Route
-            path="/"
+          <Route 
+            path="/" 
             element={
               <ProtectedRoute>
                 <DevicesPage />
               </ProtectedRoute>
-            }
+            } 
           />
 
-          <Route
-            path="/devices"
+          <Route 
+            path="/devices" 
             element={
               <ProtectedRoute>
                 <DevicesPage />
               </ProtectedRoute>
-            }
+            } 
           />
 
-          <Route
-            path="/sms"
+          <Route 
+            path="/sms" 
             element={
               <ProtectedRoute>
                 <SMSPage />
               </ProtectedRoute>
-            }
+            } 
           />
 
-          <Route
-            path="/device/:deviceId"
+          <Route 
+            path="/device/:deviceId" 
             element={
               <ProtectedRoute>
                 <DeviceDetails />
               </ProtectedRoute>
-            }
+            } 
+          />
+
+          {/* ⭐ FULL PAGE ONLINE ADMINS ROUTE */}
+          <Route 
+            path="/online-admins" 
+            element={
+              <ProtectedRoute>
+                <OnlineAdmins />
+              </ProtectedRoute>
+            } 
           />
 
         </Routes>
