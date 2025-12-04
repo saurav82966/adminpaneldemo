@@ -1,10 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
-
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
-
-import { ref, set, onDisconnect, onValue } from "firebase/database";
+import { ref, set, onDisconnect, onValue, remove } from "firebase/database";
 import { db } from "./firebase";
 
 import DevicesPage from "./components/DevicesPage";
@@ -28,11 +26,13 @@ function Navbar() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [user, setUser] = useState(null);
 
+  // Get current user
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, u => setUser(u));
     return () => unsub();
   }, []);
 
+  // Count online admins
   useEffect(() => {
     if (!user) return;
 
@@ -47,9 +47,8 @@ function Navbar() {
     });
   }, [user]);
 
-  if (location.pathname === "/login" || location.pathname === "/register") {
-    return null;
-  }
+  // Hide navbar on login/register
+  if (["/login", "/register"].includes(location.pathname)) return null;
 
   return (
     <nav className="navbar">
@@ -57,8 +56,8 @@ function Navbar() {
         <h1>SMS Admin Panel</h1>
 
         <div className="nav-links">
-          <Link to="/devices" className="nav-link">Devices</Link>
-          <Link to="/sms" className="nav-link">All SMS</Link>
+          <Link className="nav-link" to="/devices">Devices</Link>
+          <Link className="nav-link" to="/sms">All SMS</Link>
 
           <Link
             to="/online-admins"
@@ -68,8 +67,18 @@ function Navbar() {
             👁 Online {onlineCount}
           </Link>
 
+          {/* LOGOUT */}
           <button
             onClick={() => {
+              const user = auth.currentUser;
+              if (user) {
+                const dbPath = localStorage.getItem("dbPath_" + user.uid);
+                const TAB_ID = sessionStorage.getItem("TAB_SESSION_ID");
+
+                if (dbPath && TAB_ID) {
+                  remove(ref(db, `onlineAdmins/${dbPath}/${TAB_ID}`));
+                }
+              }
               sessionStorage.removeItem("TAB_SESSION_ID");
               auth.signOut();
             }}
@@ -88,23 +97,21 @@ function Navbar() {
    MAIN APP
 ======================================================= */
 function App() {
-
   const [authLoading, setAuthLoading] = useState(true);
   const sessionInit = useRef(false);
 
-  // Create 1 tab ID only once
+  // Generate tab ID once
   useEffect(() => {
     if (!sessionStorage.getItem("TAB_SESSION_ID")) {
       sessionStorage.setItem(
         "TAB_SESSION_ID",
-        "tab_" + Math.random().toString(36).slice(2) + "_" + Date.now()
+        "tab_" + Math.random().toString(36).substring(2) + "_" + Date.now()
       );
     }
   }, []);
 
-  // Main listener — runs only ONCE in entire app lifetime
+  // Global single listener
   useEffect(() => {
-
     if (GLOBAL_LISTENER_ADDED) {
       setAuthLoading(false);
       return;
@@ -113,29 +120,37 @@ function App() {
 
     const TAB_ID = sessionStorage.getItem("TAB_SESSION_ID");
 
-    const unsub = onAuthStateChanged(auth, user => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        sessionInit.current = false;
+        setAuthLoading(false);
+        return;
+      }
 
-      if (user) {
-        const dbPath = localStorage.getItem("dbPath_" + user.uid);
+      const dbPath = localStorage.getItem("dbPath_" + user.uid);
+      if (!dbPath) {
+        setAuthLoading(false);
+        return;
+      }
 
-        if (dbPath && !sessionInit.current) {
+      const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_ID}`);
 
-          sessionInit.current = true;
+      // Create entry only ONCE
+      if (!sessionInit.current) {
+        sessionInit.current = true;
 
-          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_ID}`);
+        const info = {
+          email: user.email,
+          uid: user.uid,
+          tabId: TAB_ID,
+          device: navigator.userAgent,
+          platform: navigator.platform,
+          loginTime: Date.now(),
+          lastActive: Date.now()
+        };
 
-          const info = {
-            email: user.email,
-            uid: user.uid,
-            tabId: TAB_ID,
-            browser: navigator.userAgent.substring(0, 50),
-            platform: navigator.platform,
-            lastActive: Date.now()
-          };
-
-          set(onlineRef, info);
-          onDisconnect(onlineRef).remove();
-        }
+        set(onlineRef, info);
+        onDisconnect(onlineRef).remove();
       }
 
       setAuthLoading(false);
@@ -144,42 +159,40 @@ function App() {
     return () => unsub();
   }, []);
 
-  // Update lastActive every 30 sec, no new entries created
+  // Update activity every 20 sec
   useEffect(() => {
     const interval = setInterval(() => {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user || !sessionInit.current) return;
 
       const dbPath = localStorage.getItem("dbPath_" + user.uid);
       const TAB_ID = sessionStorage.getItem("TAB_SESSION_ID");
 
-      if (!dbPath || !TAB_ID || !sessionInit.current) return;
+      if (!dbPath || !TAB_ID) return;
 
       const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_ID}`);
       set(onlineRef, {
         email: user.email,
         uid: user.uid,
         tabId: TAB_ID,
-        browser: navigator.userAgent.substring(0, 50),
+        device: navigator.userAgent,
         platform: navigator.platform,
+        loginTime: Date.now(),
         lastActive: Date.now()
       });
-    }, 30000);
+    }, 20000);
 
     return () => clearInterval(interval);
   }, []);
 
   if (authLoading) {
-    return (
-      <div className="loading" style={{ marginTop: 80, textAlign: "center", fontSize: 22 }}>
-        Checking session...
-      </div>
-    );
+    return <div className="loading" style={{ marginTop: 80 }}>Checking session...</div>;
   }
 
   return (
     <Router>
       <Navbar />
+
       <main className="main-content">
         <Routes>
           <Route path="/login" element={<Login />} />
