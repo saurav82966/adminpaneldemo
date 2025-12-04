@@ -1,3 +1,4 @@
+// OnlineAdmins.js
 import React, { useEffect, useState } from "react";
 import { ref, onValue, remove } from "firebase/database";
 import { db, auth } from "../firebase";
@@ -6,16 +7,17 @@ export default function OnlineAdmins() {
   const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
-    const dbPath = localStorage.getItem("dbPath_" + auth.currentUser.uid);
+    const user = auth.currentUser;
+    const dbPath = localStorage.getItem("dbPath_" + user.uid);
 
     const onlineRef = ref(db, "onlineAdmins/" + dbPath);
 
-    return onValue(onlineRef, (snap) => {
+    return onValue(onlineRef, snap => {
       const data = snap.val() || {};
 
-      const arr = Object.entries(data).map(([key, info]) => ({
-        sessionId: key,
-        ...info,
+      const arr = Object.entries(data).map(([id, info]) => ({
+        sessionId: id,
+        ...info
       }));
 
       setSessions(arr);
@@ -30,27 +32,28 @@ export default function OnlineAdmins() {
   };
 
   return (
-    <div style={{ padding:20 }}>
-      <h1>Active Admin Sessions</h1>
+    <div style={{ padding: 20 }}>
+      <h1>🔐 Active Login Sessions</h1>
 
       {sessions.length === 0 ? (
-        <div>No active sessions</div>
+        <p>No active logins</p>
       ) : (
-        sessions.map((s) => (
+        sessions.map(s => (
           <div key={s.sessionId} style={{
-            padding: 12,
-            marginBottom: 10,
             border: "1px solid #ccc",
-            borderRadius: 6
+            marginBottom: 12,
+            padding: 14,
+            borderRadius: 8
           }}>
             <h3>{s.email}</h3>
-            <div><b>Browser:</b> {s.browser}</div>
-            <div><b>Device:</b> {s.platform}</div>
-            <div><b>Logged In:</b> {new Date(s.loginTime).toLocaleString()}</div>
+            <div><b>Device:</b> {s.browser}</div>
+            <div><b>Platform:</b> {s.platform}</div>
+            <div><b>Logged At:</b> {new Date(s.loginTime).toLocaleString()}</div>
 
             <button 
               onClick={() => forceLogout(s.sessionId)}
-              style={{ marginTop: 10, padding: "5px 10px", background:"red", color:"white" }}>
+              style={{ marginTop: 10, background: "red", color: "white", padding: "5px 10px" }}
+            >
               Logout This Device
             </button>
           </div>
