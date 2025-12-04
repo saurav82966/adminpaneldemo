@@ -33,12 +33,13 @@ function Navbar() {
 
           {/* LOGOUT BUTTON */}
           <button
-            onClick={() => auth.signOut()}
-            className="nav-link"
-            style={{ background: "red", color: "white", padding: "6px 12px", borderRadius: "6px" }}
-          >
-            Logout
-          </button>
+  onClick={() => auth.signOut()}
+  className="nav-link"
+  style={{ background: "red", color: "white", padding: "6px 12px", borderRadius: "6px" }}
+>
+  Logout
+</button>
+
         </div>
       </div>
     </nav>
