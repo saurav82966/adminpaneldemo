@@ -16,6 +16,7 @@ import Register from './components/Register';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import './App.css';
+let GLOBAL_AUTH_LISTENER_RAN = false;
 
 /* =======================================================
    NAVBAR
@@ -114,74 +115,54 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
-    
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const dbPath = localStorage.getItem("dbPath_" + user.uid);
-        
-        if (dbPath) {
-          // Clear previous session for this tab before creating new one
-          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
-          
-          // First remove any existing entry for this tab
-          remove(onlineRef).then(() => {
-            // Only set new session if not already initialized for this tab
-            if (!sessionInitializedRef.current) {
-              const info = {
-                email: user.email,
-                uid: user.uid,
-                tabId: TAB_SESSION_ID,
-                browser: navigator.userAgent.substring(0, 50), // Limit length
-                platform: navigator.platform,
-                lastActive: Date.now(),
-                lastUpdated: new Date().toISOString()
-              };
+useEffect(() => {
+  // STOP RE-RUN ON ROUTE CHANGE
+  if (GLOBAL_AUTH_LISTENER_RAN) {
+    setAuthLoading(false);
+    return;
+  }
+  GLOBAL_AUTH_LISTENER_RAN = true;
 
-              set(onlineRef, info)
-                .then(() => {
-                  console.log("Online status set for tab:", TAB_SESSION_ID);
-                  sessionInitializedRef.current = true;
-                })
-                .catch(console.error);
+  const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
 
-              // Setup onDisconnect cleanup
-              onDisconnect(onlineRef).remove()
-                .then(() => {
-                  console.log("OnDisconnect handler set for tab:", TAB_SESSION_ID);
-                })
-                .catch(console.error);
-            }
-          }).catch(console.error);
-        }
-      } else {
-        // User logged out - reset the ref
-        sessionInitializedRef.current = false;
-        cleanupDoneRef.current = false;
-      }
-      
+  const unsub = onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      sessionInitializedRef.current = false;
       setAuthLoading(false);
-    });
+      return;
+    }
 
-    // Cleanup function for when component unmounts
-    return () => {
-      unsub();
-      
-      // Only cleanup once when tab/window closes
-      if (!cleanupDoneRef.current && auth.currentUser) {
-        cleanupDoneRef.current = true;
-        const user = auth.currentUser;
-        const dbPath = localStorage.getItem("dbPath_" + user.uid);
-        const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
-        
-        if (dbPath && TAB_SESSION_ID) {
-          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
-          remove(onlineRef).catch(console.error);
-        }
-      }
-    };
-  }, []); // Empty dependency array - runs once on mount
+    const dbPath = localStorage.getItem("dbPath_" + user.uid);
+    if (!dbPath) {
+      setAuthLoading(false);
+      return;
+    }
+
+    const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
+
+    // FULL FIX → NO DUPLICATES
+    if (!sessionInitializedRef.current) {
+      sessionInitializedRef.current = true;
+
+      const info = {
+        email: user.email,
+        uid: user.uid,
+        tabId: TAB_SESSION_ID,
+        browser: navigator.userAgent.substring(0, 50),
+        platform: navigator.platform,
+        lastActive: Date.now()
+      };
+
+      set(onlineRef, info);
+      onDisconnect(onlineRef).remove();
+    }
+
+    setAuthLoading(false);
+  });
+
+  return () => unsub();
+}, []);
+
 
   // Update lastActive periodically for active tab
   useEffect(() => {
