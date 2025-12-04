@@ -10,7 +10,13 @@ export default function OnlineAdmins() {
 
     return onValue(onlineRef, (snap) => {
       const data = snap.val() || {};
-      setAdmins(Object.values(data));
+
+      const list = Object.entries(data).map(([uid, info]) => ({
+        uid,
+        ...info
+      }));
+
+      setAdmins(list);
     });
   }, []);
 
@@ -21,9 +27,9 @@ export default function OnlineAdmins() {
       {admins.length === 0 ? (
         <div className="no-data">No admins online.</div>
       ) : (
-        admins.map((a, i) => (
+        admins.map((a) => (
           <div
-            key={i}
+            key={a.uid}
             className="admin-card"
             style={{
               padding: "15px",
@@ -33,8 +39,7 @@ export default function OnlineAdmins() {
               background: "#fafafa"
             }}
           >
-            <h3 style={{ margin: "0 0 10px 0" }}>{a.email}</h3>
-
+            <h3>{a.email}</h3>
             <div><strong>Browser:</strong> {a.browser}</div>
             <div><strong>Device:</strong> {a.platform}</div>
             <div><strong>Last Active:</strong> {new Date(a.lastActive).toLocaleString()}</div>

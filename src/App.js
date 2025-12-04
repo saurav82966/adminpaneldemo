@@ -17,26 +17,27 @@ import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
 // ================================
-// NAVBAR
+// NAVBAR — FIXED (No conditional hook)
 // ================================
 function Navbar() {
   const location = useLocation();
   const [onlineCount, setOnlineCount] = useState(0);
 
-  // Login & Register page par navbar hide
-  if (location.pathname === "/login" || location.pathname === "/register") {
-    return null;
-  }
-
-  // ⭐ LIVE online admin count
+  // ⭐ LIVE online count — hook always top-level
   useEffect(() => {
     const onlineRef = ref(db, "onlineAdmins");
-
     return onValue(onlineRef, (snap) => {
       const data = snap.val() || {};
       setOnlineCount(Object.keys(data).length);
     });
   }, []);
+
+  // ⭐ Navbar hide condition
+  const hideNavbar =
+    location.pathname === "/login" ||
+    location.pathname === "/register";
+
+  if (hideNavbar) return null;
 
   return (
     <nav className="navbar">
@@ -47,15 +48,15 @@ function Navbar() {
           <Link to="/devices" className="nav-link">Devices</Link>
           <Link to="/sms" className="nav-link">All SMS</Link>
 
-          {/* ⭐ SHOW LIVE COUNT */}
-          <Link 
+          {/* ⭐ ONLINE COUNT */}
+          <Link
             to="/online-admins"
             className="nav-link"
-            style={{ 
-              background: "#4caf50", 
-              color: "white", 
-              padding: "6px 12px", 
-              borderRadius: "6px" 
+            style={{
+              background: "#4caf50",
+              color: "white",
+              padding: "6px 12px",
+              borderRadius: "6px"
             }}
           >
             👁 Online {onlineCount}
@@ -65,11 +66,11 @@ function Navbar() {
           <button
             onClick={() => auth.signOut()}
             className="nav-link"
-            style={{ 
-              background: "red", 
-              color: "white", 
-              padding: "6px 12px", 
-              borderRadius: "6px" 
+            style={{
+              background: "red",
+              color: "white",
+              padding: "6px 12px",
+              borderRadius: "6px"
             }}
           >
             Logout
@@ -81,47 +82,40 @@ function Navbar() {
 }
 
 // ================================
-// APP MAIN COMPONENT
+// MAIN APP
 // ================================
 function App() {
-
   const [authLoading, setAuthLoading] = useState(true);
 
-  // ⭐ Firebase auth state check + online admin tracker
+  // ⭐ Track 'onlineAdmins' when user logs in
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-
       if (user) {
-        // ⭐ Mark admin online
         const onlineRef = ref(db, "onlineAdmins/" + user.uid);
-
-        const adminInfo = {
+        const info = {
           email: user.email,
           browser: navigator.userAgent,
           platform: navigator.platform,
           lastActive: Date.now()
         };
 
-        set(onlineRef, adminInfo);
-
-        // ⭐ Auto remove when tab closed
+        set(onlineRef, info);
         onDisconnect(onlineRef).remove();
       }
-
       setAuthLoading(false);
     });
 
     return () => unsub();
   }, []);
 
-  // ⭐ Loader while auth loads
+  // ⭐ Loader while checking session
   if (authLoading) {
     return (
       <div className="loading" style={{ textAlign: "center", marginTop: "80px", fontSize: "22px" }}>
         Checking session...
       </div>
     );
-    }
+  }
 
   return (
     <Router>
@@ -135,50 +129,50 @@ function App() {
           <Route path="/register" element={<Register />} />
 
           {/* PROTECTED ROUTES */}
-          <Route 
-            path="/" 
+          <Route
+            path="/"
             element={
               <ProtectedRoute>
                 <DevicesPage />
               </ProtectedRoute>
-            } 
+            }
           />
 
-          <Route 
-            path="/devices" 
+          <Route
+            path="/devices"
             element={
               <ProtectedRoute>
                 <DevicesPage />
               </ProtectedRoute>
-            } 
+            }
           />
 
-          <Route 
-            path="/sms" 
+          <Route
+            path="/sms"
             element={
               <ProtectedRoute>
                 <SMSPage />
               </ProtectedRoute>
-            } 
+            }
           />
 
-          <Route 
-            path="/device/:deviceId" 
+          <Route
+            path="/device/:deviceId"
             element={
               <ProtectedRoute>
                 <DeviceDetails />
               </ProtectedRoute>
-            } 
+            }
           />
 
-          {/* ⭐ FULL PAGE ONLINE ADMINS PAGE */}
-          <Route 
-            path="/online-admins" 
+          {/* ⭐ ONLINE ADMINS PAGE */}
+          <Route
+            path="/online-admins"
             element={
               <ProtectedRoute>
                 <OnlineAdmins />
               </ProtectedRoute>
-            } 
+            }
           />
 
         </Routes>
