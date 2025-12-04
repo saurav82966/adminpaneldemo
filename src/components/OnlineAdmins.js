@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from "react";
 import { ref, onValue } from "firebase/database";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 
 export default function OnlineAdmins() {
   const [admins, setAdmins] = useState([]);
 
   useEffect(() => {
-    const onlineRef = ref(db, "onlineAdmins");
+    const dbPath = localStorage.getItem("dbPath_" + auth.currentUser.uid);
+    const onlineRef = ref(db, "onlineAdmins/" + dbPath);
 
     return onValue(onlineRef, (snap) => {
       const data = snap.val() || {};
 
-      const list = Object.entries(data).map(([uid, info]) => ({
-        uid,
+      const list = Object.entries(data).map(([sid, info]) => ({
+        sessionId: sid,
         ...info
       }));
 
@@ -21,27 +22,18 @@ export default function OnlineAdmins() {
   }, []);
 
   return (
-    <div className="card" style={{ margin: "20px" }}>
-      <h1 style={{ marginBottom: "20px" }}>🟢 Online Admins</h1>
+    <div className="card" style={{ margin: 20 }}>
+      <h1>🟢 Online Admin Sessions</h1>
 
       {admins.length === 0 ? (
-        <div className="no-data">No admins online.</div>
+        <div>No admins online.</div>
       ) : (
-        admins.map((a) => (
-          <div
-            key={a.uid}
-            className="admin-card"
-            style={{
-              padding: "15px",
-              marginBottom: "15px",
-              borderRadius: "10px",
-              border: "1px solid #ddd",
-              background: "#fafafa"
-            }}
-          >
+        admins.map(a => (
+          <div key={a.sessionId} className="admin-card">
             <h3>{a.email}</h3>
             <div><strong>Browser:</strong> {a.browser}</div>
             <div><strong>Device:</strong> {a.platform}</div>
+            <div><strong>Session ID:</strong> {a.sessionId}</div>
             <div><strong>Last Active:</strong> {new Date(a.lastActive).toLocaleString()}</div>
           </div>
         ))

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
+
 import { ref, set, onDisconnect, onValue } from "firebase/database";
 import { db } from "./firebase";
 
@@ -16,28 +18,36 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 import './App.css';
 
-// ================================
-// NAVBAR — FIXED (No conditional hook)
-// ================================
+
+
+/* ====================================================
+   NAVBAR (ALWAYS AT TOP LEVEL)
+==================================================== */
 function Navbar() {
   const location = useLocation();
   const [onlineCount, setOnlineCount] = useState(0);
 
-  // ⭐ LIVE online count — hook always top-level
+  // Live count of admins inside SAME dbPath
   useEffect(() => {
-    const onlineRef = ref(db, "onlineAdmins");
-    return onValue(onlineRef, (snap) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const dbPath = localStorage.getItem("dbPath_" + uid);
+    if (!dbPath) return;
+
+    // Listen to only this user's workspace admins
+    const onlineRef = ref(db, "onlineAdmins/" + dbPath);
+
+    return onValue(onlineRef, snap => {
       const data = snap.val() || {};
       setOnlineCount(Object.keys(data).length);
     });
   }, []);
 
-  // ⭐ Navbar hide condition
-  const hideNavbar =
-    location.pathname === "/login" ||
-    location.pathname === "/register";
-
-  if (hideNavbar) return null;
+  // Hide on login/register
+  if (location.pathname === "/login" || location.pathname === "/register") {
+    return null;
+  }
 
   return (
     <nav className="navbar">
@@ -48,7 +58,7 @@ function Navbar() {
           <Link to="/devices" className="nav-link">Devices</Link>
           <Link to="/sms" className="nav-link">All SMS</Link>
 
-          {/* ⭐ ONLINE COUNT */}
+          {/* ONLINE COUNT BUTTON */}
           <Link
             to="/online-admins"
             className="nav-link"
@@ -81,34 +91,54 @@ function Navbar() {
   );
 }
 
-// ================================
-// MAIN APP
-// ================================
+
+
+/* ====================================================
+   MAIN APP
+==================================================== */
 function App() {
+
   const [authLoading, setAuthLoading] = useState(true);
 
-  // ⭐ Track 'onlineAdmins' when user logs in
+  // Track online admin sessions
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const onlineRef = ref(db, "onlineAdmins/" + user.uid);
-        const info = {
-          email: user.email,
-          browser: navigator.userAgent,
-          platform: navigator.platform,
-          lastActive: Date.now()
-        };
 
-        set(onlineRef, info);
-        onDisconnect(onlineRef).remove();
+      if (user) {
+        const dbPath = localStorage.getItem("dbPath_" + user.uid);
+
+        if (dbPath) {
+
+          // UNIQUE session ID (browser tab)
+          const sessionId = `${user.uid}_${Date.now()}`;
+
+          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${sessionId}`);
+
+          const info = {
+            email: user.email,
+            sessionId,
+            browser: navigator.userAgent,
+            platform: navigator.platform,
+            lastActive: Date.now()
+          };
+
+          // Save active session
+          set(onlineRef, info);
+
+          // Auto remove on tab close
+          onDisconnect(onlineRef).remove();
+        }
       }
+
       setAuthLoading(false);
     });
 
     return () => unsub();
   }, []);
 
-  // ⭐ Loader while checking session
+
+
+  // Loader while checking Firebase login state
   if (authLoading) {
     return (
       <div className="loading" style={{ textAlign: "center", marginTop: "80px", fontSize: "22px" }}>
@@ -117,6 +147,8 @@ function App() {
     );
   }
 
+
+
   return (
     <Router>
       <Navbar />
@@ -124,48 +156,17 @@ function App() {
       <main className="main-content">
         <Routes>
 
-          {/* PUBLIC ROUTES */}
+          {/* PUBLIC */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
-          {/* PROTECTED ROUTES */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DevicesPage />
-              </ProtectedRoute>
-            }
-          />
+          {/* PROTECTED */}
+          <Route path="/" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+          <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+          <Route path="/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
+          <Route path="/device/:deviceId" element={<ProtectedRoute><DeviceDetails /></ProtectedRoute>} />
 
-          <Route
-            path="/devices"
-            element={
-              <ProtectedRoute>
-                <DevicesPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/sms"
-            element={
-              <ProtectedRoute>
-                <SMSPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/device/:deviceId"
-            element={
-              <ProtectedRoute>
-                <DeviceDetails />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* ⭐ ONLINE ADMINS PAGE */}
+          {/* FULL PAGE ONLINE ADMIN LIST */}
           <Route
             path="/online-admins"
             element={
