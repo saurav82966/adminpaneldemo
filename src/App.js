@@ -102,39 +102,40 @@ function App() {
 
   useEffect(() => {
 
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const dbPath = localStorage.getItem("dbPath_" + user.uid);
-        if (dbPath) {
+  const unsub = onAuthStateChanged(auth, (user) => {
+    if (user) {
+      const dbPath = localStorage.getItem("dbPath_" + user.uid);
+      if (dbPath) {
 
-          // ⭐ FIXED — PERSISTENT SESSION ID
-          let sessionId = localStorage.getItem("sessionId");
-          if (!sessionId) {
-            sessionId = `${user.uid}_${Math.random().toString(36).substring(2)}`;
-            localStorage.setItem("sessionId", sessionId);
-          }
-
-          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${sessionId}`);
-
-          const info = {
-            email: user.email,
-            uid: user.uid,
-            sessionId,
-            browser: navigator.userAgent,
-            platform: navigator.platform,
-            lastActive: Date.now()
-          };
-
-          set(onlineRef, info);
-          onDisconnect(onlineRef).remove();
+        // ⭐ FIXED — TAB WISE SESSION ID
+        let sessionId = sessionStorage.getItem("sessionId");
+        if (!sessionId) {
+          sessionId = `${user.uid}_${Math.random().toString(36).substring(2)}`;
+          sessionStorage.setItem("sessionId", sessionId);
         }
+
+        const onlineRef = ref(db, `onlineAdmins/${dbPath}/${sessionId}`);
+
+        const info = {
+          email: user.email,
+          uid: user.uid,
+          sessionId,
+          browser: navigator.userAgent,
+          platform: navigator.platform,
+          lastActive: Date.now()
+        };
+
+        set(onlineRef, info);
+        onDisconnect(onlineRef).remove();
       }
+    }
 
-      setAuthLoading(false);
-    });
+    setAuthLoading(false);
+  });
 
-    return () => unsub();
-  }, []);
+  return () => unsub();
+}, []);
+
 
 
   // Loader
