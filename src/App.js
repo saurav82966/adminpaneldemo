@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 
@@ -19,19 +18,18 @@ import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
 
-// =======================================================
-// NAVBAR
-// =======================================================
+/* =======================================================
+   NAVBAR
+======================================================= */
 function Navbar() {
   const location = useLocation();
   const [onlineCount, setOnlineCount] = useState(0);
 
-  // Listen to workspace admins count
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return;
+    const user = auth.currentUser;
+    if (!user) return;
 
-    const dbPath = localStorage.getItem("dbPath_" + uid);
+    const dbPath = localStorage.getItem("dbPath_" + user.uid);
     if (!dbPath) return;
 
     const onlineRef = ref(db, "onlineAdmins/" + dbPath);
@@ -40,9 +38,8 @@ function Navbar() {
       const data = snap.val() || {};
       setOnlineCount(Object.keys(data).length);
     });
-  }, []);
+  }, [auth.currentUser]);
 
-  // Hide navbar on login/register
   if (location.pathname === "/login" || location.pathname === "/register") {
     return null;
   }
@@ -53,10 +50,10 @@ function Navbar() {
         <h1>SMS Admin Panel</h1>
 
         <div className="nav-links">
+
           <Link to="/devices" className="nav-link">Devices</Link>
           <Link to="/sms" className="nav-link">All SMS</Link>
 
-          {/* ONLINE ADMINS */}
           <Link
             to="/online-admins"
             className="nav-link"
@@ -70,10 +67,9 @@ function Navbar() {
             👁 Online {onlineCount}
           </Link>
 
-          {/* LOGOUT */}
           <button
             onClick={() => {
-              localStorage.removeItem("sessionId");
+              sessionStorage.removeItem("TAB_SESSION_ID");
               auth.signOut();
             }}
             className="nav-link"
@@ -93,52 +89,54 @@ function Navbar() {
 }
 
 
-// =======================================================
-// MAIN APP COMPONENT
-// =======================================================
+/* =======================================================
+   MAIN APP
+======================================================= */
 function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Generate UNIQUE TAB ID once
+  if (!sessionStorage.getItem("TAB_SESSION_ID")) {
+    sessionStorage.setItem(
+      "TAB_SESSION_ID",
+      "tab_" + Math.random().toString(36).substring(2)
+    );
+  }
+
+  const TAB_SESSION_ID = sessionStorage.getItem("TAB_SESSION_ID");
+
   useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
 
-  const unsub = onAuthStateChanged(auth, (user) => {
-    if (user) {
-      const dbPath = localStorage.getItem("dbPath_" + user.uid);
-      if (dbPath) {
+      if (user) {
+        const dbPath = localStorage.getItem("dbPath_" + user.uid);
 
-        // ⭐ FIXED — TAB WISE SESSION ID
-        let sessionId = sessionStorage.getItem("sessionId");
-        if (!sessionId) {
-          sessionId = `${user.uid}_${Math.random().toString(36).substring(2)}`;
-          sessionStorage.setItem("sessionId", sessionId);
+        if (dbPath) {
+
+          const onlineRef = ref(db, `onlineAdmins/${dbPath}/${TAB_SESSION_ID}`);
+
+          const info = {
+            email: user.email,
+            uid: user.uid,
+            tabId: TAB_SESSION_ID,
+            browser: navigator.userAgent,
+            platform: navigator.platform,
+            lastActive: Date.now()
+          };
+
+          set(onlineRef, info);
+          onDisconnect(onlineRef).remove();
         }
-
-        const onlineRef = ref(db, `onlineAdmins/${dbPath}/${sessionId}`);
-
-        const info = {
-          email: user.email,
-          uid: user.uid,
-          sessionId,
-          browser: navigator.userAgent,
-          platform: navigator.platform,
-          lastActive: Date.now()
-        };
-
-        set(onlineRef, info);
-        onDisconnect(onlineRef).remove();
       }
-    }
 
-    setAuthLoading(false);
-  });
+      setAuthLoading(false);
+    });
 
-  return () => unsub();
-}, []);
-
+    return () => unsub();
+  }, []);
 
 
-  // Loader
   if (authLoading) {
     return (
       <div className="loading" style={{ textAlign: "center", marginTop: "80px", fontSize: "22px" }}>
@@ -155,17 +153,14 @@ function App() {
       <main className="main-content">
         <Routes>
 
-          {/* PUBLIC PAGES */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
-          {/* PROTECTED PAGES */}
           <Route path="/" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
           <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
           <Route path="/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
           <Route path="/device/:deviceId" element={<ProtectedRoute><DeviceDetails /></ProtectedRoute>} />
 
-          {/* FULL PAGE ONLINE ADMINS LIST */}
           <Route
             path="/online-admins"
             element={
