@@ -1,18 +1,39 @@
-import React, { useState } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import React, { useState, useEffect } from "react";
+import { createUserWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
+import { ref, set } from "firebase/database";
+import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
 
 export default function Register() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [dbPath, setDbPath] = useState("");
+
+  // ⭐ Already logged-in user register page mat dekhe
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate("/devices", { replace: true });
+      }
+    });
+    return () => unsub();
+  }, [navigate]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      alert("Account created!");
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // ⭐ Save user dbPath in Firebase
+      await set(ref(db, "users/" + user.uid), {
+        email: email,
+        dbPath: dbPath
+      });
+
+      alert("Account Created Successfully!");
       navigate("/login");
     } catch (err) {
       alert("Registration failed");
@@ -39,6 +60,16 @@ export default function Register() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+
+        {/* ⭐ Database Path */}
+        <input
+          type="text"
+          className="form-input"
+          placeholder="Enter Database Path (e.g., devices1)"
+          value={dbPath}
+          onChange={(e) => setDbPath(e.target.value)}
           required
         />
 

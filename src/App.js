@@ -4,7 +4,6 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
 import DeviceDetails from './components/DeviceDetails';
-import SendSmsPage from './components/SendSmsPage';
 
 import Login from './components/Login';
 import Register from './components/Register';
@@ -29,7 +28,7 @@ function Navbar() {
         <div className="nav-links">
           <Link to="/devices" className="nav-link">Devices</Link>
           <Link to="/sms" className="nav-link">All SMS</Link>
-          <Link to="/send-sms" className="nav-link">Send SMS</Link>
+          
 
           {/* LOGOUT BUTTON */}
           <button

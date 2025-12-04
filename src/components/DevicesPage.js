@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../firebase';
+import { auth } from "../firebase";
 import { useNavigate } from 'react-router-dom';
 
 const DevicesPage = () => {
@@ -11,7 +12,11 @@ const DevicesPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const devicesRef = ref(db, 'devices1');
+    const dbPath = localStorage.getItem("dbPath_" + auth.currentUser?.uid);
+    if (!dbPath) return;
+
+    const devicesRef = ref(db, dbPath);
+
 
     const unsubscribe = onValue(
       devicesRef,

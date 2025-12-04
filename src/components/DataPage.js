@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../firebase';
+import { auth } from "../firebase";
 import { useParams, useNavigate } from 'react-router-dom';
 
 const DataPage = () => {
@@ -14,9 +15,16 @@ const DataPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  
+const dbPath = auth.currentUser 
+  ? localStorage.getItem("dbPath_" + auth.currentUser.uid)
+  : null;
+
   // All devices fetch karna
   useEffect(() => {
-    const devicesRef = ref(db, 'devices1');
+     if (!dbPath) return;
+
+    const devicesRef = ref(db, dbPath);
     
     const unsubscribe = onValue(devicesRef, (snapshot) => {
       try {
@@ -65,7 +73,7 @@ const DataPage = () => {
 
   // Specific device ka data load karna
   const loadDeviceDetails = (deviceId) => {
-    const deviceRef = ref(db, `devices1/${deviceId}`);
+    const deviceRef = ref(db, `${dbPath}/${deviceId}`);
     
     onValue(deviceRef, (snapshot) => {
       try {
