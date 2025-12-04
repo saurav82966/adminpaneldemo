@@ -39,7 +39,7 @@ const DeviceDetails = () => {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
-  
+
   const dbPath = auth.currentUser
     ? localStorage.getItem("dbPath_" + auth.currentUser.uid)
     : null;  
@@ -657,7 +657,7 @@ const DeviceDetails = () => {
                           style={{
                             padding: "15px",
                             borderRadius: "10px",
-                            background: "white",
+                            background: "#dcdcdc",
                             border: "1px solid #e0e7ff",
                             boxShadow: "0 4px 12px rgba(0,0,0,0.07)",
                             position: "relative"
@@ -667,7 +667,7 @@ const DeviceDetails = () => {
                           {/* STATUS BADGE */}
                           <div style={{
                             position: "absolute",
-                            top: "10px",
+                            top: "3px",
                             right: "10px",
                             padding: "5px 12px",
                             fontSize: "12px",

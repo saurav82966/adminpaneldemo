@@ -701,6 +701,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 10px 20px;
+  background: red;
   border: none;
   border-radius: 25px;
   font-weight: 500;
