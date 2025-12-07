@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ref, onValue, off, remove, query, equalTo, get } from "firebase/database";
+import { ref, onValue, off, remove, set } from "firebase/database";
 import { db, auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
@@ -11,7 +11,6 @@ const AllUsersPage = () => {
   const [currentUserId, setCurrentUserId] = useState(null);
   const navigate = useNavigate();
 
-  // Get current user info
   useEffect(() => {
     const user = auth.currentUser;
     if (user) {
@@ -23,7 +22,7 @@ const AllUsersPage = () => {
     }
   }, []);
 
-  // ACTIVE SESSIONS LIVE TRACKING - improved
+  // Track active sessions
   useEffect(() => {
     const sessionsRef = ref(db, "active_sessions");
     
@@ -44,7 +43,7 @@ const AllUsersPage = () => {
     };
   }, []);
 
-  // LOAD USERS OF SAME DB PATH
+  // Load users
   useEffect(() => {
     if (!dbPath) return;
 
@@ -70,21 +69,14 @@ const AllUsersPage = () => {
     };
   }, [dbPath]);
 
-  // Count active sessions for a specific user
-  const countSessions = (userId) => {
-    return Object.values(activeSessions).filter(session => 
-      session.userId === userId
-    ).length;
-  };
-
-  // Get active sessions for a specific user
+  // Get user sessions
   const getUserSessions = (userId) => {
     return Object.entries(activeSessions)
       .filter(([_, session]) => session.userId === userId)
       .map(([sessionId, session]) => ({ sessionId, ...session }));
   };
 
-  // LOGOUT USER FROM ALL DEVICES
+  // STRONG LOGOUT FUNCTION - Complete user blocking
   const handleLogoutUser = async (userId) => {
     const userSessions = getUserSessions(userId);
     
@@ -93,128 +85,152 @@ const AllUsersPage = () => {
       return;
     }
 
-    if (!window.confirm(`Logout this user from ${userSessions.length} device(s)?`)) {
+    if (!window.confirm(`Logout ${userSessions.length} device(s) for this user? They will need to login again.`)) {
       return;
     }
 
     try {
-      // Remove all sessions for this user
+      // 1. Remove all Firebase sessions
       const deletePromises = userSessions.map(session => 
         remove(ref(db, `active_sessions/${session.sessionId}`))
       );
       
       await Promise.all(deletePromises);
       
-      // If logging out current user
+      // 2. Set force logout flag (24 hours validity)
+      localStorage.setItem(`force_logout_${userId}`, Date.now().toString());
+      
+      // 3. Revoke auth permission in ALL devices
+      localStorage.setItem("auth_revoked", Date.now().toString());
+      
+      // 4. Create a logout record in database
+      const logoutRecordRef = push(ref(db, "logout_records"));
+      await set(logoutRecordRef, {
+        userId: userId,
+        adminId: currentUserId,
+        timestamp: new Date().toISOString(),
+        sessionsRemoved: userSessions.length,
+        reason: "Admin forced logout"
+      });
+      
+      // 5. If logging out current user
       if (userId === currentUserId) {
-        // Clear local session
-        localStorage.removeItem("dbPath_" + userId);
+        // Remove auth permission locally
+        localStorage.removeItem("auth_allowed_" + userId);
         
-        // Sign out from Firebase Auth
+        // Sign out from Firebase
         await signOut(auth);
         
-        // Broadcast logout to other tabs
-        localStorage.setItem("force_logout_" + userId, Date.now().toString());
+        // Clear local data
+        localStorage.removeItem(`dbPath_${userId}`);
+        localStorage.removeItem("current_session_id");
         
+        // Redirect to login
         navigate("/login");
-        return;
+        window.location.reload();
+      } else {
+        // For other users, broadcast logout
+        localStorage.setItem(`force_logout_${userId}`, Date.now().toString());
+        
+        alert(`✅ User logged out from ${userSessions.length} device(s)\nThey will need to login again.`);
       }
-      
-      // For other users, broadcast logout to their devices
-      localStorage.setItem("force_logout_" + userId, Date.now().toString());
-      
-      alert(`User logged out from ${userSessions.length} device(s)`);
     } catch (error) {
-      console.error("Error logging out user:", error);
+      console.error("Logout error:", error);
       alert("Failed to logout user");
     }
   };
 
-  // LOGOUT FROM SPECIFIC DEVICE
+  // Logout specific device
   const handleLogoutDevice = async (sessionId, userId) => {
     if (!window.confirm("Logout from this specific device?")) return;
     
     try {
+      // Remove session from Firebase
       await remove(ref(db, `active_sessions/${sessionId}`));
       
-      // Broadcast to specific user's devices
-      localStorage.setItem("force_logout_" + userId, Date.now().toString());
-      
-      // If this is current user's session, check if we need to logout locally
+      // If this device belongs to current user, check locally
       if (userId === currentUserId) {
         const currentSessionId = localStorage.getItem("current_session_id");
         if (currentSessionId === sessionId) {
+          // This is current device, logout completely
+          localStorage.removeItem("auth_allowed_" + userId);
           await signOut(auth);
-          localStorage.removeItem("dbPath_" + userId);
+          localStorage.removeItem(`dbPath_${userId}`);
           localStorage.removeItem("current_session_id");
           navigate("/login");
         }
       }
+      
+      alert("Device logged out successfully");
     } catch (error) {
-      console.error("Error logging out device:", error);
+      console.error("Device logout error:", error);
     }
   };
 
   return (
     <div className="all-users-container">
-      <h2>All Users (Database: {dbPath || "Not set"})</h2>
+      <h2>👥 All Users (Database: {dbPath || "Not set"})</h2>
+      <p className="text-muted">You can see all active sessions and logout users/devices</p>
       
       <div className="users-grid">
         {users.length === 0 ? (
-          <p>No users found in this database</p>
+          <p className="text-center">No users found in this database</p>
         ) : (
           users.map((user) => {
-            const sessionCount = countSessions(user.id);
             const userSessions = getUserSessions(user.id);
+            const sessionCount = userSessions.length;
             
             return (
               <div className="user-card" key={user.id}>
                 <div className="user-header">
-                  <h4>{user.email}</h4>
-                  <span className={`session-badge ${sessionCount > 0 ? 'active' : 'inactive'}`}>
-                    {sessionCount} active session(s)
+                  <div>
+                    <h4>{user.email}</h4>
+                    <small className="text-muted">User ID: {user.id.substring(0, 8)}...</small>
+                  </div>
+                  <span className={`badge ${sessionCount > 0 ? 'bg-success' : 'bg-secondary'}`}>
+                    {sessionCount} active device(s)
                   </span>
                 </div>
                 
-                <div className="user-sessions">
-                  <h5>Active Devices:</h5>
-                  {userSessions.length > 0 ? (
-                    <ul className="sessions-list">
+                <div className="user-sessions mt-3">
+                  <h6>📱 Active Devices:</h6>
+                  {sessionCount > 0 ? (
+                    <div className="sessions-list">
                       {userSessions.map((session) => (
-                        <li key={session.sessionId} className="session-item">
-                          <div>
-                            <strong>Device:</strong> {session.device ? 
-                              (session.device.includes('Mobile') ? 'Mobile' : 
-                               session.device.includes('Android') ? 'Android' : 
-                               session.device.includes('iPhone') ? 'iPhone' : 
-                               session.device) : 'Unknown device'}
+                        <div key={session.sessionId} className="session-item card mb-2">
+                          <div className="card-body p-2">
+                            <div className="d-flex justify-content-between">
+                              <div>
+                                <strong>{session.deviceName || "Unknown Device"}</strong>
+                                <div className="text-muted small">
+                                  {new Date(session.loginTime).toLocaleString()}
+                                </div>
+                              </div>
+                              <button
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={() => handleLogoutDevice(session.sessionId, user.id)}
+                                title="Logout this device only"
+                              >
+                                🚪 Logout
+                              </button>
+                            </div>
                           </div>
-                          <div>
-                            <small>Logged in: {new Date(session.loginTime).toLocaleString()}</small>
-                          </div>
-                          <button
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => handleLogoutDevice(session.sessionId, user.id)}
-                            title="Logout from this device only"
-                          >
-                            Logout Device
-                          </button>
-                        </li>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   ) : (
-                    <p className="text-muted">No active sessions</p>
+                    <p className="text-muted small">No active sessions</p>
                   )}
                 </div>
                 
-                <div className="user-actions">
+                <div className="user-actions mt-3">
                   <button
-                    className="btn btn-danger"
+                    className="btn btn-danger w-100"
                     onClick={() => handleLogoutUser(user.id)}
                     disabled={sessionCount === 0}
-                    title={sessionCount === 0 ? "User is not logged in" : "Logout from all devices"}
+                    title={sessionCount === 0 ? "User is not logged in" : "Logout from ALL devices"}
                   >
-                    Logout All Devices
+                    🚫 Logout All Devices ({sessionCount})
                   </button>
                 </div>
               </div>

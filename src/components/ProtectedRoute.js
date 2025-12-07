@@ -1,67 +1,71 @@
 import React, { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
 import { ref, remove } from "firebase/database";
 import { db } from "../firebase";
 
 const ProtectedRoute = ({ children }) => {
-  const [user, setUser] = useState(auth.currentUser);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((user) => {
-      setUser(user);
-      setLoading(false);
+    const checkAuth = async () => {
+      const currentUser = auth.currentUser;
       
-      if (user) {
-        // Check if user is force logged out
-        const forceLogoutKey = `force_logout_${user.uid}`;
-        const forceLogoutTime = localStorage.getItem(forceLogoutKey);
+      if (currentUser) {
+        // Check our custom auth permission
+        const authAllowed = localStorage.getItem("auth_allowed_" + currentUser.uid);
+        const forceLogoutTime = localStorage.getItem(`force_logout_${currentUser.uid}`);
         
-        if (forceLogoutTime) {
+        if (!authAllowed || authAllowed !== "true") {
+          // Auth not allowed by our system
+          await auth.signOut();
+          localStorage.removeItem(`dbPath_${currentUser.uid}`);
+          localStorage.removeItem("current_session_id");
+          setUser(null);
+        } else if (forceLogoutTime) {
+          // Force logout active
           const logoutTime = parseInt(forceLogoutTime);
           const currentTime = Date.now();
           
-          if (currentTime - logoutTime < 5 * 60 * 1000) {
-            // Clean up session
+          if (currentTime - logoutTime < 24 * 60 * 60 * 1000) {
+            // Logout and cleanup
             const sessionId = localStorage.getItem("current_session_id");
             if (sessionId) {
-              remove(ref(db, `active_sessions/${sessionId}`));
+              await remove(ref(db, `active_sessions/${sessionId}`));
             }
             
-            // Sign out
-            auth.signOut();
-            localStorage.removeItem(forceLogoutKey);
-            localStorage.removeItem(`dbPath_${user.uid}`);
+            await auth.signOut();
+            localStorage.removeItem("auth_allowed_" + currentUser.uid);
+            localStorage.removeItem(`dbPath_${currentUser.uid}`);
             localStorage.removeItem("current_session_id");
-            
-            // Redirect
-            window.location.href = "/login";
+            setUser(null);
           } else {
-            localStorage.removeItem(forceLogoutKey);
+            // Clear old logout flag
+            localStorage.removeItem(`force_logout_${currentUser.uid}`);
+            setUser(currentUser);
           }
+        } else {
+          setUser(currentUser);
         }
+      } else {
+        setUser(null);
       }
+      
+      setLoading(false);
+    };
+
+    const unsub = auth.onAuthStateChanged(() => {
+      checkAuth();
     });
 
+    // Listen for logout events
     const handleStorageChange = (e) => {
-      if (e.key && e.key.startsWith('force_logout_')) {
-        const userId = e.key.replace('force_logout_', '');
-        const currentUser = auth.currentUser;
-        
-        if (currentUser && currentUser.uid === userId) {
-          // Clean up session
-          const sessionId = localStorage.getItem("current_session_id");
-          if (sessionId) {
-            remove(ref(db, `active_sessions/${sessionId}`));
-          }
-          
-          auth.signOut();
-          localStorage.removeItem(`dbPath_${userId}`);
-          localStorage.removeItem("current_session_id");
-          
-          window.location.href = "/login";
-        }
+      if (e.key === 'auth_revoked' || 
+          (e.key && e.key.startsWith('force_logout_') && 
+           e.key.includes(auth.currentUser?.uid))) {
+        window.location.reload();
       }
     };
 
@@ -71,11 +75,16 @@ const ProtectedRoute = ({ children }) => {
       unsub();
       window.removeEventListener("storage", handleStorageChange);
     };
-  }, []);
+  }, [navigate]);
 
   if (loading) {
     return (
-      <div style={{ textAlign: "center", paddingTop: "40px" }}>Loading...</div>
+      <div className="d-flex justify-content-center align-items-center vh-100">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+        <span className="ms-2">Verifying session...</span>
+      </div>
     );
   }
 
