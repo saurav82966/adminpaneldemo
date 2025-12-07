@@ -28,9 +28,9 @@ function Navbar() {
 
     if (user && sessionId) {
       await remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
-      localStorage.removeItem("dbPath_" + user.uid);
     }
 
+    localStorage.removeItem("dbPath_" + user.uid);
     await auth.signOut();
   };
 
@@ -63,53 +63,89 @@ function Navbar() {
 }
 
 function App() {
-
   const [authLoading, setAuthLoading] = useState(true);
+  const [sessionId] = useState(() => {
+    // Session ID ko initialize karein (agar nahi hai to banayein)
+    const existingId = localStorage.getItem("sessionId");
+    if (!existingId) {
+      const newId = 'session_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem("sessionId", newId);
+      return newId;
+    }
+    return existingId;
+  });
 
   // ⭐ WAIT FOR AUTH READY
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, () => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // User logged in hai, to session create karein
+        const deviceName = navigator.userAgent;
+        set(ref(db, `activeSessions/${user.uid}/${sessionId}`), {
+          deviceName,
+          lastActive: Date.now(),
+          createdAt: Date.now()
+        });
+      }
       setAuthLoading(false);
     });
     return () => unsub();
-  }, []);
+  }, [sessionId]);
 
-  // ⭐ HEARTBEAT (REAL-TIME LIVE DETECTION)
+  // ⭐ FAST HEARTBEAT (EVERY 1 SECOND FOR INSTANT UPDATE)
   useEffect(() => {
-    const interval = setInterval(() => {
+    const updateHeartbeat = () => {
       const user = auth.currentUser;
-      const sessionId = localStorage.getItem("sessionId");
-
       if (!user || !sessionId) return;
 
-      // Update every 2 seconds
+      const updates = {
+        lastActive: Date.now(),
+        deviceName: navigator.userAgent
+      };
+
+      // Update only lastActive field (optimized)
       set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
-    }, 2000);
+    };
+
+    // Pehla heartbeat turant
+    updateHeartbeat();
+    
+    // Fir har 1 second par
+    const interval = setInterval(updateHeartbeat, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [sessionId]);
 
-  // ⭐ REMOVE SESSION ONLY WHEN TAB IS CLOSED (NOT REFRESH)
+  // ⭐ REMOVE SESSION ONLY WHEN TAB IS CLOSED
   useEffect(() => {
-    const handleClose = () => {
-      const nav = performance.getEntriesByType("navigation")[0];
-
-      // ❌ If page is refreshed → DO NOT logout
-      if (nav && nav.type === "reload") return;
-
-      // ✔ If browser/tab closed → remove session
+    const handleBeforeUnload = (e) => {
+      // BEFOREUNLOAD: Tab close hone par
       const user = auth.currentUser;
-      const sessionId = localStorage.getItem("sessionId");
-
       if (user && sessionId) {
-        remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
+        // Sync call karein kyunki async nahi chalega beforeunload mein
+        navigator.sendBeacon || remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
       }
     };
 
-    window.addEventListener("beforeunload", handleClose);
+    // Handle visibility change (tab switch)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Tab switch ya minimize hone par bhi update karein
+        const user = auth.currentUser;
+        if (user && sessionId) {
+          set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
+        }
+      }
+    };
 
-    return () => window.removeEventListener("beforeunload", handleClose);
-  }, []);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [sessionId]);
 
   // ⭐ AUTH LOADING SCREEN
   if (authLoading) {
@@ -130,7 +166,6 @@ function App() {
 
       <main className="main-content">
         <Routes>
-
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
@@ -139,7 +174,6 @@ function App() {
           <Route path="/sessions" element={<ProtectedRoute><SessionsPage /></ProtectedRoute>} />
           <Route path="/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
           <Route path="/device/:deviceId" element={<ProtectedRoute><DeviceDetails /></ProtectedRoute>} />
-
         </Routes>
       </main>
     </Router>
