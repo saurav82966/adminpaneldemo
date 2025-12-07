@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { ref, onValue, off, set, push, remove } from "firebase/database";
+import { ref, onValue, off, remove } from "firebase/database";
 import { db, auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { signOut } from "firebase/auth";
 
 const AllUsersPage = () => {
   const [users, setUsers] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [userDevices, setUserDevices] = useState([]);
   const [activeSessions, setActiveSessions] = useState({});
   const [dbPath, setDbPath] = useState("");
   const navigate = useNavigate();
@@ -20,15 +18,15 @@ const AllUsersPage = () => {
 
   // ACTIVE SESSIONS LIVE TRACKING
   useEffect(() => {
-    const refx = ref(db, "active_sessions");
+    const sessionsRef = ref(db, "active_sessions");
 
-    const unsub = onValue(refx, (snap) => {
+    const unsub = onValue(sessionsRef, (snap) => {
       const obj = {};
       snap.forEach((x) => (obj[x.key] = x.val()));
       setActiveSessions(obj);
     });
 
-    return () => off(refx, "value", unsub);
+    return () => off(sessionsRef, "value", unsub);
   }, []);
 
   // LOAD USERS OF SAME DB
@@ -58,8 +56,8 @@ const AllUsersPage = () => {
     if (!window.confirm("Logout this user from all devices?")) return;
 
     // REMOVE ALL SESSIONS FOR THIS USER
-    Object.entries(activeSessions).forEach(([sid, ses]) => {
-      if (ses.userId === uid) {
+    Object.entries(activeSessions).forEach(([sid, sess]) => {
+      if (sess.userId === uid) {
         remove(ref(db, "active_sessions/" + sid));
       }
     });

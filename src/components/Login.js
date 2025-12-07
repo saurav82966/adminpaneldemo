@@ -23,7 +23,7 @@ export default function Login() {
     return () => window.removeEventListener("storage", handle);
   }, []);
 
-  // AUTO LOGIN → SKIP LOGIN PAGE
+  // AUTO LOGIN → Also Create Session
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -32,6 +32,17 @@ export default function Login() {
           const userData = snap.val();
           localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
         }
+
+        // AUTO LOGIN par bhi session create karega
+        const sessionRef = push(ref(db, "active_sessions"));
+        await set(sessionRef, {
+          sessionId: sessionRef.key,
+          userId: user.uid,
+          email: user.email,
+          device: navigator.userAgent,
+          loginTime: new Date().toISOString(),
+          lastActive: new Date().toISOString(),
+        });
 
         localStorage.setItem("login_sync", Date.now());
         navigate("/users", { replace: true });
@@ -55,6 +66,7 @@ export default function Login() {
       // CREATE ACTIVE SESSION
       const sid = push(ref(db, "active_sessions"));
       await set(sid, {
+        sessionId: sid.key,
         userId: user.uid,
         email: user.email,
         device: navigator.userAgent,
