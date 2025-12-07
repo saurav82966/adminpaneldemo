@@ -15,6 +15,7 @@ export default function Login() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         await registerSession(user);
+        await loadDbPath(user.uid);
         navigate("/devices", { replace: true });
       }
     });
@@ -22,6 +23,20 @@ export default function Login() {
     return () => unsub();
   }, []);
 
+  // ⭐ Load the user's dbPath from Firebase and store in localStorage
+  const loadDbPath = async (uid) => {
+    try {
+      const snap = await get(ref(db, "users/" + uid));
+      if (snap.exists()) {
+        const userData = snap.val();
+        localStorage.setItem("dbPath_" + uid, userData.dbPath);
+      }
+    } catch (err) {
+      console.log("Failed to load dbPath:", err);
+    }
+  };
+
+  // ⭐ Register this device session
   const registerSession = async (user) => {
     const deviceName = navigator.userAgent;
 
@@ -31,12 +46,16 @@ export default function Login() {
     });
   };
 
+  // ⭐ Login handler
   const handleLogin = async (e) => {
     e.preventDefault();
 
     try {
       const userCred = await signInWithEmailAndPassword(auth, email, password);
+
       await registerSession(userCred.user);
+      await loadDbPath(userCred.user.uid);
+
       navigate("/devices");
     } catch (err) {
       alert("Wrong Email or Password");
@@ -48,19 +67,37 @@ export default function Login() {
       <h2>Login</h2>
 
       <form onSubmit={handleLogin}>
-        <input type="email" className="form-input" placeholder="Email"
-          value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input
+          type="email"
+          className="form-input"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-        <input type="password" className="form-input" placeholder="Password"
-          value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <input
+          type="password"
+          className="form-input"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-        <button className="btn btn-primary" type="submit">Login</button>
+        <button className="btn btn-primary" type="submit">
+          Login
+        </button>
       </form>
 
       <p style={{ marginTop: "10px" }}>
-        Don't have an account?
-        <span style={{ color: "blue", cursor: "pointer" }}
-          onClick={() => navigate("/register")}> Register </span>
+        Don't have an account?{" "}
+        <span
+          style={{ color: "blue", cursor: "pointer" }}
+          onClick={() => navigate("/register")}
+        >
+          Register
+        </span>
       </p>
     </div>
   );
