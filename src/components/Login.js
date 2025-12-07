@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
-import { ref, get } from "firebase/database";
+import { ref, get, set, push } from "firebase/database";
 import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
 
@@ -10,64 +10,62 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // Multi-tab sync listener
+  // MULTI DEVICE SYNC HANDLER
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'firebase_logout_event' && auth.currentUser) {
+    const handle = (e) => {
+      if (e.key === "force_logout") {
         auth.signOut();
-      }
-      
-      if (e.key === 'firebase_login_event' && auth.currentUser) {
-        navigate("/devices", { replace: true });
+        window.location.reload();
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", handle);
+    return () => window.removeEventListener("storage", handle);
+  }, []);
 
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, [navigate]);
-
-  // ⭐ If user already logged in → load dbPath + redirect
+  // AUTO LOGIN → SKIP LOGIN PAGE
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        try {
-          const snap = await get(ref(db, "users/" + user.uid));
-          if (snap.exists()) {
-            const userData = snap.val();
-            localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
-          }
-        } catch (err) {
-          console.log("Failed to load dbPath:", err);
+        const snap = await get(ref(db, "users/" + user.uid));
+        if (snap.exists()) {
+          const userData = snap.val();
+          localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
         }
 
-        localStorage.setItem('firebase_login_event', Date.now().toString());
-        navigate("/devices", { replace: true });
+        localStorage.setItem("login_sync", Date.now());
+        navigate("/users", { replace: true });
       }
     });
 
-    return () => unsubscribe();
-  }, [navigate]);
+    return () => unsub();
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
 
       const snap = await get(ref(db, "users/" + user.uid));
       if (snap.exists()) {
-        const userData = snap.val();
-        localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
+        localStorage.setItem("dbPath_" + user.uid, snap.val().dbPath);
       }
 
-      localStorage.setItem('firebase_login_event', Date.now().toString());
-      navigate("/devices");
+      // CREATE ACTIVE SESSION
+      const sid = push(ref(db, "active_sessions"));
+      await set(sid, {
+        userId: user.uid,
+        email: user.email,
+        device: navigator.userAgent,
+        loginTime: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+      });
+
+      localStorage.setItem("login_sync", Date.now());
+      navigate("/users");
     } catch (err) {
-      alert("Wrong Email or Password");
+      alert("Invalid Email or Password");
     }
   };
 
@@ -94,7 +92,9 @@ export default function Login() {
           required
         />
 
-        <button className="btn btn-primary" type="submit">Login</button>
+        <button className="btn btn-primary" type="submit">
+          Login
+        </button>
       </form>
 
       <p style={{ marginTop: "10px" }}>

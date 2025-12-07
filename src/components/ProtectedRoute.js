@@ -7,41 +7,31 @@ const ProtectedRoute = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      setUser(currentUser);
+    const unsub = auth.onAuthStateChanged((u) => {
+      setUser(u);
       setLoading(false);
     });
 
-    const handleStorageChange = (e) => {
-      if (e.key === 'firebase_logout_event') {
+    const sync = (e) => {
+      if (e.key === "force_logout") {
         window.location.reload();
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener("storage", sync);
 
     return () => {
-      unsubscribe();
-      window.removeEventListener('storage', handleStorageChange);
+      unsub();
+      window.removeEventListener("storage", sync);
     };
   }, []);
 
-  if (loading) {
+  if (loading)
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        <div>Checking authentication...</div>
-      </div>
+      <div style={{ textAlign: "center", paddingTop: "40px" }}>Loading...</div>
     );
-  }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user) return <Navigate to="/login" replace />;
 
   return children;
 };
