@@ -91,6 +91,19 @@ function App() {
       </div>
     );
   }
+useEffect(() => {
+  const interval = setInterval(() => {
+    const user = auth.currentUser;
+    const sessionId = localStorage.getItem("sessionId");
+
+    if (!user || !sessionId) return;
+
+    // Update lastActive timestamp
+    set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
+  }, 10000); // every 10 seconds
+
+  return () => clearInterval(interval);
+}, []);
 
   return (
     <Router>
