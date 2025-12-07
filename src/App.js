@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
+import { ref, remove } from "firebase/database";
 
 import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
@@ -17,10 +18,25 @@ import './App.css';
 function Navbar() {
   const location = useLocation();
 
-  // Login & Register page par navbar hide
+  // Hide navbar on login/register
   if (location.pathname === "/login" || location.pathname === "/register") {
     return null;
   }
+
+  const handleLogout = async () => {
+    const user = auth.currentUser;
+    const sessionId = localStorage.getItem("sessionId");
+
+    if (user) {
+      // ⭐ Remove session entry on normal logout
+      await remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
+
+      // ⭐ Clean dbPath localStorage
+      localStorage.removeItem("dbPath_" + user.uid);
+    }
+
+    await auth.signOut();
+  };
 
   return (
     <nav className="navbar">
@@ -32,11 +48,15 @@ function Navbar() {
           <Link to="/sms" className="nav-link">All SMS</Link>
           <Link to="/sessions" className="nav-link">Logged Devices</Link>
 
-          {/* LOGOUT BUTTON */}
           <button
-            onClick={() => auth.signOut()}
+            onClick={handleLogout}
             className="nav-link"
-            style={{ background: "red", color: "white", padding: "6px 12px", borderRadius: "6px" }}
+            style={{
+              background: "red",
+              color: "white",
+              padding: "6px 12px",
+              borderRadius: "6px"
+            }}
           >
             Logout
           </button>
@@ -50,7 +70,7 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
-  // ⭐ Pehle check karo Firebase user ready hua ya nahi
+  // ⭐ Wait for Firebase auth to initialize
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => {
       setAuthLoading(false);
@@ -59,10 +79,14 @@ function App() {
     return () => unsub();
   }, []);
 
-  // ⭐ Jab tak auth state load ho rahi ho → blank screen or loader
+  // Loader while Firebase initializes
   if (authLoading) {
     return (
-      <div className="loading" style={{ textAlign: "center", marginTop: "80px", fontSize: "22px" }}>
+      <div className="loading" style={{
+        textAlign: "center",
+        marginTop: "80px",
+        fontSize: "22px"
+      }}>
         Checking session...
       </div>
     );
@@ -96,7 +120,9 @@ function App() {
                 <DevicesPage />
               </ProtectedRoute>
             }
-          /><Route
+          />
+
+          <Route
             path="/sessions"
             element={
               <ProtectedRoute>
@@ -104,7 +130,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
 
           <Route
             path="/sms"
