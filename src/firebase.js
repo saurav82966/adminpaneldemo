@@ -1,3 +1,4 @@
+// firebase.js
 import { initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
 import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
@@ -15,5 +16,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 export const auth = getAuth(app);
+
+// ⭐ Local Storage persistence
 setPersistence(auth, browserLocalPersistence);
+
+// ⭐ Generate unique session ID per device (only once)
+if (!localStorage.getItem("sessionId")) {
+  localStorage.setItem("sessionId", "dev_" + crypto.randomUUID());
+}
+
 export default app;
