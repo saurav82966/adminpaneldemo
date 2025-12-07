@@ -285,7 +285,7 @@ export default function Login() {
           className="form-input"
           placeholder="Password"
           value={password}
-          onChange={(e) => setPassword(e.value)}
+          onChange={(e) => setPassword(e.target.value)}
           required
         />
 
