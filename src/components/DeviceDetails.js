@@ -461,7 +461,7 @@ const DeviceDetails = () => {
             >
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <i>💬</i>
-                <span>SMS Messages</span>
+                <span>Device SMS</span>
               </div>
               <span className="badge">{smsList.length}</span>
             </button>

@@ -10,6 +10,25 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // Multi-tab sync listener
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'firebase_logout_event' && auth.currentUser) {
+        auth.signOut();
+      }
+      
+      if (e.key === 'firebase_login_event' && auth.currentUser) {
+        navigate("/devices", { replace: true });
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [navigate]);
+
   // ⭐ If user already logged in → load dbPath + redirect
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -18,14 +37,13 @@ export default function Login() {
           const snap = await get(ref(db, "users/" + user.uid));
           if (snap.exists()) {
             const userData = snap.val();
-
-            // ⭐ Per-user dbPath store
             localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
           }
         } catch (err) {
           console.log("Failed to load dbPath:", err);
         }
 
+        localStorage.setItem('firebase_login_event', Date.now().toString());
         navigate("/devices", { replace: true });
       }
     });
@@ -40,13 +58,13 @@ export default function Login() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // ⭐ Load user's dbPath from Firebase
       const snap = await get(ref(db, "users/" + user.uid));
       if (snap.exists()) {
         const userData = snap.val();
         localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
       }
 
+      localStorage.setItem('firebase_login_event', Date.now().toString());
       navigate("/devices");
     } catch (err) {
       alert("Wrong Email or Password");
