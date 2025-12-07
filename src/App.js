@@ -26,7 +26,7 @@ function Navbar() {
     const user = auth.currentUser;
     const sessionId = localStorage.getItem("sessionId");
 
-    if (user) {
+    if (user && sessionId) {
       await remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
       localStorage.removeItem("dbPath_" + user.uid);
     }
@@ -66,16 +66,15 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
-  // ⭐ AUTH LOAD CHECK
+  // ⭐ WAIT FOR AUTH READY
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => {
       setAuthLoading(false);
     });
-
     return () => unsub();
   }, []);
 
-  // ⭐ HEARTBEAT USEEFFECT → must be before any conditional return
+  // ⭐ HEARTBEAT (REAL-TIME LIVE DETECTION)
   useEffect(() => {
     const interval = setInterval(() => {
       const user = auth.currentUser;
@@ -83,13 +82,30 @@ function App() {
 
       if (!user || !sessionId) return;
 
+      // Faster update: every 2 seconds
       set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
-    }, 10000);
+    }, 2000); // 2 seconds
 
     return () => clearInterval(interval);
   }, []);
 
-  // ⭐ CONDITIONAL RETURN AFTER Hooks
+  // ⭐ REMOVE SESSION WHEN TAB/BROWSER CLOSE
+  useEffect(() => {
+    const handleClose = () => {
+      const user = auth.currentUser;
+      const sessionId = localStorage.getItem("sessionId");
+
+      if (user && sessionId) {
+        remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
+      }
+    };
+
+    window.addEventListener("beforeunload", handleClose);
+
+    return () => window.removeEventListener("beforeunload", handleClose);
+  }, []);
+
+  // ⭐ AUTH LOADING SCREEN
   if (authLoading) {
     return (
       <div className="loading" style={{
