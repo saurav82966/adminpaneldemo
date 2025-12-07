@@ -82,16 +82,22 @@ function App() {
 
       if (!user || !sessionId) return;
 
-      // Faster update: every 2 seconds
+      // Update every 2 seconds
       set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
-    }, 2000); // 2 seconds
+    }, 2000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // ⭐ REMOVE SESSION WHEN TAB/BROWSER CLOSE
+  // ⭐ REMOVE SESSION ONLY WHEN TAB IS CLOSED (NOT REFRESH)
   useEffect(() => {
     const handleClose = () => {
+      const nav = performance.getEntriesByType("navigation")[0];
+
+      // ❌ If page is refreshed → DO NOT logout
+      if (nav && nav.type === "reload") return;
+
+      // ✔ If browser/tab closed → remove session
       const user = auth.currentUser;
       const sessionId = localStorage.getItem("sessionId");
 
