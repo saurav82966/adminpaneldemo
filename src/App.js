@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "./firebase";
-import { ref, remove, set } from "firebase/database";
+import { ref, remove, set, onValue } from "firebase/database";
 
 import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
@@ -17,6 +17,33 @@ import './App.css';
 
 function Navbar() {
   const location = useLocation();
+  const [liveCount, setLiveCount] = useState(0);
+  const user = auth.currentUser;
+
+  // 🔴 LIVE DEVICES COUNT TRACKING
+  useEffect(() => {
+    if (!user || location.pathname === "/login" || location.pathname === "/register") return;
+
+    const sessionRef = ref(db, `activeSessions/${user.uid}`);
+    
+    const unsubscribe = onValue(sessionRef, (snap) => {
+      if (snap.exists()) {
+        const sessions = snap.val();
+        const now = Date.now();
+        
+        // Count only LIVE sessions (within last 3 seconds)
+        const liveSessions = Object.values(sessions).filter(
+          session => now - session.lastActive < 3000
+        ).length;
+        
+        setLiveCount(liveSessions);
+      } else {
+        setLiveCount(0);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user, location.pathname]);
 
   if (location.pathname === "/login" || location.pathname === "/register") {
     return null;
@@ -42,7 +69,31 @@ function Navbar() {
         <div className="nav-links">
           <Link to="/devices" className="nav-link">Devices</Link>
           <Link to="/sms" className="nav-link">All SMS</Link>
-          <Link to="/sessions" className="nav-link">Logged Devices</Link>
+          
+          {/* 🔴 LIVE DEVICES LINK WITH COUNTER */}
+          <Link to="/sessions" className="nav-link" style={{ position: 'relative' }}>
+            Live
+            {liveCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-8px',
+                right: '-8px',
+                background: '#ff4444',
+                color: 'white',
+                borderRadius: '50%',
+                width: '20px',
+                height: '20px',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 'bold',
+                animation: 'pulse 1.5s infinite'
+              }}>
+                {liveCount}
+              </span>
+            )}
+          </Link>
 
           <button
             onClick={handleLogout}
