@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase";
-import { ref, get, set, push } from "firebase/database";
+import { ref, get, set, push, remove } from "firebase/database";
 import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
 
@@ -9,48 +9,123 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const sessionIdRef = useRef(null);
 
-  // MULTI DEVICE SYNC HANDLER
+  // MULTI DEVICE SYNC HANDLER - Improved
   useEffect(() => {
-    const handle = (e) => {
-      if (e.key === "force_logout") {
-        auth.signOut();
-        window.location.reload();
+    const handleStorageChange = (e) => {
+      if (e.key && e.key.startsWith('force_logout_')) {
+        const userId = e.key.replace('force_logout_', '');
+        const currentUser = auth.currentUser;
+        
+        if (currentUser && currentUser.uid === userId) {
+          // Clean up current session from Firebase
+          if (sessionIdRef.current) {
+            remove(ref(db, `active_sessions/${sessionIdRef.current}`));
+          }
+          
+          // Sign out locally
+          auth.signOut();
+          localStorage.removeItem(`dbPath_${userId}`);
+          localStorage.removeItem('current_session_id');
+          
+          // Redirect to login
+          navigate("/login", { replace: true });
+        }
       }
     };
 
-    window.addEventListener("storage", handle);
-    return () => window.removeEventListener("storage", handle);
-  }, []);
+    window.addEventListener("storage", handleStorageChange);
+    
+    // Check if we're already force logged out
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      const forceLogoutKey = `force_logout_${currentUser.uid}`;
+      const forceLogoutTime = localStorage.getItem(forceLogoutKey);
+      if (forceLogoutTime) {
+        const logoutTime = parseInt(forceLogoutTime);
+        const currentTime = Date.now();
+        
+        // If logout was triggered in the last 5 minutes, enforce it
+        if (currentTime - logoutTime < 5 * 60 * 1000) {
+          auth.signOut();
+          localStorage.removeItem(forceLogoutKey);
+          navigate("/login", { replace: true });
+        } else {
+          // Clear old logout flags
+          localStorage.removeItem(forceLogoutKey);
+        }
+      }
+    }
 
-  // AUTO LOGIN → Also Create Session
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [navigate]);
+
+  // AUTO LOGIN handler
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        const snap = await get(ref(db, "users/" + user.uid));
-        if (snap.exists()) {
-          const userData = snap.val();
-          localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
+        try {
+          // Get user data from database
+          const userSnap = await get(ref(db, "users/" + user.uid));
+          if (userSnap.exists()) {
+            const userData = userSnap.val();
+            localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
+          }
+
+          // Check if user is force logged out
+          const forceLogoutKey = `force_logout_${user.uid}`;
+          const forceLogoutTime = localStorage.getItem(forceLogoutKey);
+          
+          if (forceLogoutTime) {
+            const logoutTime = parseInt(forceLogoutTime);
+            const currentTime = Date.now();
+            
+            // If logout was recent (within 5 minutes), enforce it
+            if (currentTime - logoutTime < 5 * 60 * 1000) {
+              await auth.signOut();
+              localStorage.removeItem(forceLogoutKey);
+              return;
+            } else {
+              // Clear old logout flag
+              localStorage.removeItem(forceLogoutKey);
+            }
+          }
+
+          // Create or update active session
+          const newSessionRef = push(ref(db, "active_sessions"));
+          const sessionData = {
+            sessionId: newSessionRef.key,
+            userId: user.uid,
+            email: user.email,
+            device: navigator.userAgent,
+            deviceType: /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
+            loginTime: new Date().toISOString(),
+            lastActive: new Date().toISOString(),
+            ipAddress: "Unknown" // You can implement IP detection if needed
+          };
+          
+          await set(newSessionRef, sessionData);
+          
+          // Store session ID locally
+          sessionIdRef.current = newSessionRef.key;
+          localStorage.setItem("current_session_id", newSessionRef.key);
+          
+          // Clear any logout flags for this user
+          localStorage.removeItem(forceLogoutKey);
+          
+          // Broadcast login to other tabs
+          localStorage.setItem("firebase_login_event", Date.now().toString());
+          
+          navigate("/devices", { replace: true });
+        } catch (error) {
+          console.error("Auto-login error:", error);
         }
-
-        // AUTO LOGIN par bhi session create karega
-        const sessionRef = push(ref(db, "active_sessions"));
-        await set(sessionRef, {
-          sessionId: sessionRef.key,
-          userId: user.uid,
-          email: user.email,
-          device: navigator.userAgent,
-          loginTime: new Date().toISOString(),
-          lastActive: new Date().toISOString(),
-        });
-
-        localStorage.setItem("login_sync", Date.now());
-        navigate("/users", { replace: true });
       }
     });
 
     return () => unsub();
-  }, []);
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -58,25 +133,59 @@ export default function Login() {
     try {
       const { user } = await signInWithEmailAndPassword(auth, email, password);
 
-      const snap = await get(ref(db, "users/" + user.uid));
-      if (snap.exists()) {
-        localStorage.setItem("dbPath_" + user.uid, snap.val().dbPath);
+      // Get user data
+      const userSnap = await get(ref(db, "users/" + user.uid));
+      if (userSnap.exists()) {
+        const userData = userSnap.val();
+        localStorage.setItem("dbPath_" + user.uid, userData.dbPath);
+      }
+
+      // Check if user is force logged out
+      const forceLogoutKey = `force_logout_${user.uid}`;
+      const forceLogoutTime = localStorage.getItem(forceLogoutKey);
+      
+      if (forceLogoutTime) {
+        const logoutTime = parseInt(forceLogoutTime);
+        const currentTime = Date.now();
+        
+        if (currentTime - logoutTime < 5 * 60 * 1000) {
+          await auth.signOut();
+          localStorage.removeItem(forceLogoutKey);
+          alert("Your account has been logged out by admin. Please login again.");
+          return;
+        } else {
+          localStorage.removeItem(forceLogoutKey);
+        }
       }
 
       // CREATE ACTIVE SESSION
-      const sid = push(ref(db, "active_sessions"));
-      await set(sid, {
-        sessionId: sid.key,
+      const newSessionRef = push(ref(db, "active_sessions"));
+      const sessionData = {
+        sessionId: newSessionRef.key,
         userId: user.uid,
         email: user.email,
         device: navigator.userAgent,
+        deviceType: /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
         loginTime: new Date().toISOString(),
         lastActive: new Date().toISOString(),
-      });
-
-      localStorage.setItem("login_sync", Date.now());
-      navigate("/users");
+        ipAddress: "Unknown"
+      };
+      
+      await set(newSessionRef, sessionData);
+      
+      // Store session ID locally
+      sessionIdRef.current = newSessionRef.key;
+      localStorage.setItem("current_session_id", newSessionRef.key);
+      
+      // Clear any logout flags
+      localStorage.removeItem(forceLogoutKey);
+      
+      // Broadcast login
+      localStorage.setItem("firebase_login_event", Date.now().toString());
+      
+      navigate("/devices");
     } catch (err) {
+      console.error("Login error:", err);
       alert("Invalid Email or Password");
     }
   };
