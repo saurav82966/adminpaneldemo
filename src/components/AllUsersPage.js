@@ -1,245 +1,231 @@
 import React, { useState, useEffect } from "react";
-import { ref, onValue, off, remove, set, push } from "firebase/database";
-import { db, auth } from "../firebase";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { auth } from "../firebase";
+import { ref, get, set, push, remove } from "firebase/database";
+import { db } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import { signOut } from "firebase/auth";
 
-const AllUsersPage = () => {
-  const [users, setUsers] = useState([]);
-  const [activeSessions, setActiveSessions] = useState({});
-  const [dbPath, setDbPath] = useState("");
-  const [currentUserId, setCurrentUserId] = useState(null);
+export default function Login() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isChecking, setIsChecking] = useState(true);
 
-  useEffect(() => {
-    const user = auth.currentUser;
-    if (user) {
-      setCurrentUserId(user.uid);
-      const savedPath = localStorage.getItem("dbPath_" + user.uid);
-      if (savedPath) {
-        setDbPath(savedPath);
-      }
+  // CHECK IF USER IS BLOCKED
+  const checkIfBlocked = async (userId) => {
+    try {
+      const blockedRef = ref(db, `blocked_users/${userId}`);
+      const snapshot = await get(blockedRef);
+      return snapshot.exists();
+    } catch (error) {
+      console.error("Block check error:", error);
+      return false;
     }
-  }, []);
+  };
 
-  // Track active sessions
+  // CHECK EXISTING SESSION ON MOUNT
   useEffect(() => {
-    const sessionsRef = ref(db, "active_sessions");
-    
-    const unsub = onValue(sessionsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const sessions = {};
-        snapshot.forEach((childSnapshot) => {
-          sessions[childSnapshot.key] = childSnapshot.val();
-        });
-        setActiveSessions(sessions);
-      } else {
-        setActiveSessions({});
-      }
-    });
-
-    return () => {
-      off(sessionsRef, "value", unsub);
-    };
-  }, []);
-
-  // Load users
-  useEffect(() => {
-    if (!dbPath) return;
-
-    const usersRef = ref(db, "users");
-    
-    const unsub = onValue(usersRef, (snapshot) => {
-      const usersList = [];
-      snapshot.forEach((childSnapshot) => {
-        const user = childSnapshot.val();
-        if (user.dbPath === dbPath) {
-          usersList.push({
-            id: childSnapshot.key,
-            email: user.email,
-            dbPath: user.dbPath
+    const checkExistingAuth = async () => {
+      const user = auth.currentUser;
+      
+      if (user) {
+        // Check if user is blocked
+        const isBlocked = await checkIfBlocked(user.uid);
+        
+        if (isBlocked) {
+          // User is blocked, force logout
+          await auth.signOut();
+          localStorage.clear();
+          alert("Your account has been blocked by admin.");
+          setIsChecking(false);
+          return;
+        }
+        
+        // Check local storage flag
+        const forceLogout = localStorage.getItem(`force_logout_${user.uid}`);
+        if (forceLogout) {
+          const logoutTime = parseInt(forceLogout);
+          if (Date.now() - logoutTime < 5 * 60 * 1000) {
+            // Recently force logged out
+            await auth.signOut();
+            localStorage.removeItem(`force_logout_${user.uid}`);
+            alert("You were logged out by admin. Please login again.");
+            setIsChecking(false);
+            return;
+          }
+        }
+        
+        // Create session if not exists
+        const sessionsRef = ref(db, "active_sessions");
+        const sessionsSnap = await get(sessionsRef);
+        let sessionExists = false;
+        
+        if (sessionsSnap.exists()) {
+          sessionsSnap.forEach((sessionSnap) => {
+            const session = sessionSnap.val();
+            if (session.userId === user.uid && 
+                session.device === navigator.userAgent) {
+              sessionExists = true;
+            }
           });
         }
-      });
-      setUsers(usersList);
-    });
-
-    return () => {
-      off(usersRef, "value", unsub);
-    };
-  }, [dbPath]);
-
-  // Get user sessions
-  const getUserSessions = (userId) => {
-    return Object.entries(activeSessions)
-      .filter(([_, session]) => session.userId === userId)
-      .map(([sessionId, session]) => ({ sessionId, ...session }));
-  };
-
-  // STRONG LOGOUT FUNCTION - Complete user blocking
-  const handleLogoutUser = async (userId) => {
-    const userSessions = getUserSessions(userId);
-    
-    if (userSessions.length === 0) {
-      alert("User is not logged in on any device");
-      return;
-    }
-
-    if (!window.confirm(`Logout ${userSessions.length} device(s) for this user? They will need to login again.`)) {
-      return;
-    }
-
-    try {
-      // 1. Remove all Firebase sessions
-      const deletePromises = userSessions.map(session => 
-        remove(ref(db, `active_sessions/${session.sessionId}`))
-      );
-      
-      await Promise.all(deletePromises);
-      
-      // 2. Set force logout flag (24 hours validity)
-      localStorage.setItem(`force_logout_${userId}`, Date.now().toString());
-      
-      // 3. Revoke auth permission in ALL devices
-      localStorage.setItem("auth_revoked", Date.now().toString());
-      
-      // 4. Create a logout record in database
-      const logoutRecordRef = push(ref(db, "logout_records"));
-      await set(logoutRecordRef, {
-        userId: userId,
-        adminId: currentUserId,
-        timestamp: new Date().toISOString(),
-        sessionsRemoved: userSessions.length,
-        reason: "Admin forced logout"
-      });
-      
-      // 5. If logging out current user
-      if (userId === currentUserId) {
-        // Remove auth permission locally
-        localStorage.removeItem("auth_allowed_" + userId);
         
-        // Sign out from Firebase
-        await signOut(auth);
+        if (!sessionExists) {
+          const newSessionRef = push(ref(db, "active_sessions"));
+          await set(newSessionRef, {
+            sessionId: newSessionRef.key,
+            userId: user.uid,
+            email: user.email,
+            device: navigator.userAgent,
+            deviceType: /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
+            loginTime: new Date().toISOString(),
+            lastActive: new Date().toISOString()
+          });
+        }
         
-        // Clear local data
-        localStorage.removeItem(`dbPath_${userId}`);
-        localStorage.removeItem("current_session_id");
+        // Get user's dbPath
+        const userSnap = await get(ref(db, `users/${user.uid}`));
+        if (userSnap.exists()) {
+          localStorage.setItem(`dbPath_${user.uid}`, userSnap.val().dbPath);
+        }
         
-        // Redirect to login
-        navigate("/login");
-        window.location.reload();
-      } else {
-        // For other users, broadcast logout
-        localStorage.setItem(`force_logout_${userId}`, Date.now().toString());
-        
-        alert(`✅ User logged out from ${userSessions.length} device(s)\nThey will need to login again.`);
+        navigate("/devices", { replace: true });
       }
-    } catch (error) {
-      console.error("Logout error:", error);
-      alert("Failed to logout user");
-    }
-  };
-
-  // Logout specific device
-  const handleLogoutDevice = async (sessionId, userId) => {
-    if (!window.confirm("Logout from this specific device?")) return;
-    
-    try {
-      // Remove session from Firebase
-      await remove(ref(db, `active_sessions/${sessionId}`));
       
-      // If this device belongs to current user, check locally
-      if (userId === currentUserId) {
-        const currentSessionId = localStorage.getItem("current_session_id");
-        if (currentSessionId === sessionId) {
-          // This is current device, logout completely
-          localStorage.removeItem("auth_allowed_" + userId);
-          await signOut(auth);
-          localStorage.removeItem(`dbPath_${userId}`);
-          localStorage.removeItem("current_session_id");
-          navigate("/login");
+      setIsChecking(false);
+    };
+
+    checkExistingAuth();
+  }, [navigate]);
+
+  // HANDLE LOGIN
+  const handleLogin = async (e) => {
+    e.preventDefault();
+
+    try {
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
+      
+      // CHECK IF BLOCKED
+      const isBlocked = await checkIfBlocked(user.uid);
+      if (isBlocked) {
+        await auth.signOut();
+        alert("Your account has been blocked by administrator.");
+        return;
+      }
+      
+      // CHECK FORCE LOGOUT
+      const forceLogout = localStorage.getItem(`force_logout_${user.uid}`);
+      if (forceLogout) {
+        const logoutTime = parseInt(forceLogout);
+        if (Date.now() - logoutTime < 5 * 60 * 1000) {
+          await auth.signOut();
+          localStorage.removeItem(`force_logout_${user.uid}`);
+          alert("You were logged out by admin. Please login again.");
+          return;
+        } else {
+          localStorage.removeItem(`force_logout_${user.uid}`);
         }
       }
       
-      alert("Device logged out successfully");
-    } catch (error) {
-      console.error("Device logout error:", error);
+      // GET USER DATA
+      const userSnap = await get(ref(db, `users/${user.uid}`));
+      if (userSnap.exists()) {
+        localStorage.setItem(`dbPath_${user.uid}`, userSnap.val().dbPath);
+      }
+      
+      // CREATE SESSION
+      const sessionRef = push(ref(db, "active_sessions"));
+      await set(sessionRef, {
+        sessionId: sessionRef.key,
+        userId: user.uid,
+        email: user.email,
+        device: navigator.userAgent,
+        deviceType: /Mobile|Android|iPhone/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
+        deviceName: getDeviceName(navigator.userAgent),
+        loginTime: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+        ip: await getIP()
+      });
+      
+      // STORE SESSION ID
+      localStorage.setItem("current_session_id", sessionRef.key);
+      
+      // NAVIGATE
+      navigate("/devices");
+      
+    } catch (err) {
+      console.error("Login error:", err);
+      alert("Invalid email or password");
     }
   };
 
-  return (
-    <div className="all-users-container">
-      <h2>👥 All Users (Database: {dbPath || "Not set"})</h2>
-      <p className="text-muted">You can see all active sessions and logout users/devices</p>
-      
-      <div className="users-grid">
-        {users.length === 0 ? (
-          <p className="text-center">No users found in this database</p>
-        ) : (
-          users.map((user) => {
-            const userSessions = getUserSessions(user.id);
-            const sessionCount = userSessions.length;
-            
-            return (
-              <div className="user-card" key={user.id}>
-                <div className="user-header">
-                  <div>
-                    <h4>{user.email}</h4>
-                    <small className="text-muted">User ID: {user.id.substring(0, 8)}...</small>
-                  </div>
-                  <span className={`badge ${sessionCount > 0 ? 'bg-success' : 'bg-secondary'}`}>
-                    {sessionCount} active device(s)
-                  </span>
-                </div>
-                
-                <div className="user-sessions mt-3">
-                  <h6>📱 Active Devices:</h6>
-                  {sessionCount > 0 ? (
-                    <div className="sessions-list">
-                      {userSessions.map((session) => (
-                        <div key={session.sessionId} className="session-item card mb-2">
-                          <div className="card-body p-2">
-                            <div className="d-flex justify-content-between">
-                              <div>
-                                <strong>{session.deviceName || "Unknown Device"}</strong>
-                                <div className="text-muted small">
-                                  {new Date(session.loginTime).toLocaleString()}
-                                </div>
-                              </div>
-                              <button
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => handleLogoutDevice(session.sessionId, user.id)}
-                                title="Logout this device only"
-                              >
-                                🚪 Logout
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-muted small">No active sessions</p>
-                  )}
-                </div>
-                
-                <div className="user-actions mt-3">
-                  <button
-                    className="btn btn-danger w-100"
-                    onClick={() => handleLogoutUser(user.id)}
-                    disabled={sessionCount === 0}
-                    title={sessionCount === 0 ? "User is not logged in" : "Logout from ALL devices"}
-                  >
-                    🚫 Logout All Devices ({sessionCount})
-                  </button>
-                </div>
-              </div>
-            );
-          })
-        )}
+  // HELPER FUNCTIONS
+  const getDeviceName = (ua) => {
+    if (ua.includes('Windows')) return 'Windows';
+    if (ua.includes('Mac')) return 'Mac';
+    if (ua.includes('Android')) {
+      if (ua.includes('OnePlus')) return 'OnePlus Phone';
+      if (ua.includes('Samsung')) return 'Samsung Phone';
+      return 'Android Phone';
+    }
+    if (ua.includes('iPhone')) return 'iPhone';
+    return 'Other Device';
+  };
+
+  const getIP = async () => {
+    try {
+      const res = await fetch('https://api.ipify.org?format=json');
+      const data = await res.json();
+      return data.ip;
+    } catch {
+      return 'Unknown';
+    }
+  };
+
+  if (isChecking) {
+    return (
+      <div className="text-center mt-5">
+        <div className="spinner-border" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+        <p>Checking authentication...</p>
       </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: "400px", margin: "50px auto" }}>
+      <h2>Login</h2>
+      <form onSubmit={handleLogin}>
+        <input
+          type="email"
+          className="form-control mb-3"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          className="form-control mb-3"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <button className="btn btn-primary w-100" type="submit">
+          Login
+        </button>
+      </form>
+      <p className="mt-3 text-center">
+        Don't have an account?{" "}
+        <span
+          style={{ color: "blue", cursor: "pointer" }}
+          onClick={() => navigate("/register")}
+        >
+          Register
+        </span>
+      </p>
     </div>
   );
-};
-
-export default AllUsersPage;
+}
