@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "./firebase";
-import { ref, remove } from "firebase/database";
+import { ref, remove, set } from "firebase/database";
 
 import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
@@ -18,7 +18,6 @@ import './App.css';
 function Navbar() {
   const location = useLocation();
 
-  // Hide navbar on login/register
   if (location.pathname === "/login" || location.pathname === "/register") {
     return null;
   }
@@ -28,10 +27,7 @@ function Navbar() {
     const sessionId = localStorage.getItem("sessionId");
 
     if (user) {
-      // ⭐ Remove session entry on normal logout
       await remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
-
-      // ⭐ Clean dbPath localStorage
       localStorage.removeItem("dbPath_" + user.uid);
     }
 
@@ -70,7 +66,7 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
 
-  // ⭐ Wait for Firebase auth to initialize
+  // ⭐ AUTH LOAD CHECK
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => {
       setAuthLoading(false);
@@ -79,7 +75,21 @@ function App() {
     return () => unsub();
   }, []);
 
-  // Loader while Firebase initializes
+  // ⭐ HEARTBEAT USEEFFECT → must be before any conditional return
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const user = auth.currentUser;
+      const sessionId = localStorage.getItem("sessionId");
+
+      if (!user || !sessionId) return;
+
+      set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // ⭐ CONDITIONAL RETURN AFTER Hooks
   if (authLoading) {
     return (
       <div className="loading" style={{
@@ -91,19 +101,6 @@ function App() {
       </div>
     );
   }
-useEffect(() => {
-  const interval = setInterval(() => {
-    const user = auth.currentUser;
-    const sessionId = localStorage.getItem("sessionId");
-
-    if (!user || !sessionId) return;
-
-    // Update lastActive timestamp
-    set(ref(db, `activeSessions/${user.uid}/${sessionId}/lastActive`), Date.now());
-  }, 10000); // every 10 seconds
-
-  return () => clearInterval(interval);
-}, []);
 
   return (
     <Router>
@@ -112,55 +109,14 @@ useEffect(() => {
       <main className="main-content">
         <Routes>
 
-          {/* PUBLIC ROUTES */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
-          {/* PROTECTED ROUTES */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DevicesPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/devices"
-            element={
-              <ProtectedRoute>
-                <DevicesPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/sessions"
-            element={
-              <ProtectedRoute>
-                <SessionsPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/sms"
-            element={
-              <ProtectedRoute>
-                <SMSPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/device/:deviceId"
-            element={
-              <ProtectedRoute>
-                <DeviceDetails />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+          <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+          <Route path="/sessions" element={<ProtectedRoute><SessionsPage /></ProtectedRoute>} />
+          <Route path="/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
+          <Route path="/device/:deviceId" element={<ProtectedRoute><DeviceDetails /></ProtectedRoute>} />
 
         </Routes>
       </main>
