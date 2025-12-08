@@ -1112,7 +1112,7 @@ html {
     font-size: .9rem;
     gap: 8px;
     margin-bottom: 3px;
-    padding: 12px 21px;
+    padding: 11px 14px;
     transition: var(--transition);
   }
 
