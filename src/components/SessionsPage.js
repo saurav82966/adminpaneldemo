@@ -95,7 +95,7 @@ export default function SessionsPage() {
     });
 
   return (
-    <div style={{ maxWidth: "1000px", margin: "20px auto", padding: "0 20px" }}>
+    <div style={{ maxWidth: "1000px", margin: "20px auto" }}>
       {/* 🔴 HEADER WITH STATS */}
       <div style={{ 
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
