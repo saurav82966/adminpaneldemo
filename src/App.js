@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate 
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { ref, remove, set, onValue } from "firebase/database";
+import ScrollToTop from "./ScrollToTop";
 
 import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
@@ -209,6 +210,7 @@ function App() {
 
   return (
     <Router>
+      <ScrollToTop /> 
       <Navbar />
       <main className="main-content">
         <Routes>

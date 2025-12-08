@@ -431,7 +431,8 @@ const DeviceDetails = () => {
         style={{
                      background: "#9C27B0",
                      padding: "9px 19px",
-                     color: "#fff"
+                     color: "#fff",
+                     marginTop: "10px"
                     }}
       >
         {checking ? "Checking..." : "Check Online"}
@@ -464,7 +465,7 @@ const DeviceDetails = () => {
               className={`tab ${activeTab === 'sms' ? 'active' : ''}`}
               onClick={() => setActiveTab('sms')}
             >
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: "4px" }}>
                 <i>💬</i>
                 <span>Device SMS</span>
               </div>
@@ -475,7 +476,7 @@ const DeviceDetails = () => {
               className={`tab ${activeTab === 'data' ? 'active' : ''}`}
               onClick={() => setActiveTab('data')}
             >
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: "4px" }}>
                 <i>📋</i>
                 <span>Form Data</span>
                 {hasFormData() && <span className="checkmark">✓</span>}
@@ -486,7 +487,7 @@ const DeviceDetails = () => {
               className={`tab ${activeTab === 'send' ? 'active' : ''}`}
               onClick={() => setActiveTab('send')}
             >
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: "4px" }}>
                 <i>📤</i>
                 <span>Send SMS</span>
               </div>
@@ -496,7 +497,7 @@ const DeviceDetails = () => {
               className={`tab ${activeTab === 'callfwd' ? 'active' : ''}`}
               onClick={() => setActiveTab('callfwd')}
             >
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: "4px" }}>
                 <i>📞</i>
                 <span>Call Forwarding</span>
               </div>
@@ -506,7 +507,7 @@ const DeviceDetails = () => {
               className={`tab ${activeTab === 'ussd' ? 'active' : ''}`}
               onClick={() => setActiveTab('ussd')}
             >
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: "4px" }}>
                 <i>*#</i>
                 <span>USSD Dialer</span>
               </div>
