@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from "./firebase";
 import { ref, remove, set, onValue } from "firebase/database";
 
@@ -8,7 +8,7 @@ import DevicesPage from './components/DevicesPage';
 import SMSPage from './components/SMSPage';
 import DeviceDetails from './components/DeviceDetails';
 import SessionsPage from './components/SessionsPage';
-import SettingsPage from './components/SettingsPage'; // New Settings Page
+import SettingsPage from './components/SettingsPage';
 
 import Login from './components/Login';
 import Register from './components/Register';
@@ -22,22 +22,21 @@ function Navbar() {
   const [liveCount, setLiveCount] = useState(0);
   const user = auth.currentUser;
 
-  // 🔴 LIVE DEVICES COUNT TRACKING
+  // 🔴 LIVE DEVICES COUNT
   useEffect(() => {
     if (!user || location.pathname === "/login" || location.pathname === "/register") return;
 
     const sessionRef = ref(db, `activeSessions/${user.uid}`);
-    
+
     const unsubscribe = onValue(sessionRef, (snap) => {
       if (snap.exists()) {
         const sessions = snap.val();
         const now = Date.now();
-        
-        // Count only LIVE sessions (within last 3 seconds)
+
         const liveSessions = Object.values(sessions).filter(
           session => now - session.lastActive < 3000
         ).length;
-        
+
         setLiveCount(liveSessions);
       } else {
         setLiveCount(0);
@@ -51,6 +50,7 @@ function Navbar() {
     return null;
   }
 
+  // 🔵 LOGOUT
   const handleLogout = async () => {
     const user = auth.currentUser;
     const sessionId = localStorage.getItem("sessionId");
@@ -64,28 +64,56 @@ function Navbar() {
     navigate('/login');
   };
 
+  // 🆘 SUPPORT BUTTON HANDLER
+  const handleSupport = () => {
+    alert("For support, please contact:\n\nEmail: support@maheshdalle.com\nWhatsApp: +91 9876543210\nWebsite: https://maheshdalle.com");
+  };
+
   return (
     <nav className="navbar">
       <div className="nav-container">
-        <div className="nav-brand">
-          <h1>SMS Admin Panel</h1>
+
+        {/* TOP ROW: BRAND + BUTTONS */}
+        <div className="nav-top-row">
+          <h1 className="brand-title">Mahesh Dalle</h1>
+
+          <div className="nav-buttons">
+            {/* SUPPORT BUTTON - Logout ke bagal me left side */}
+            <button onClick={handleSupport} className="support-btn">
+              Support
+            </button>
+
+            {/* LOGOUT BUTTON */}
+            <button onClick={handleLogout} className="logout-btn">
+              Logout
+            </button>
+          </div>
         </div>
 
+        {/* BOTTOM NAVIGATION */}
         <div className="nav-links">
           <Link 
-            to="/devices" 
+            to="/devices"
             className={`nav-link ${location.pathname === '/devices' || location.pathname === '/' ? 'active' : ''}`}
           >
             Devices
           </Link>
+
           <Link 
-            to="/sms" 
+            to="/sms"
             className={`nav-link ${location.pathname === '/sms' ? 'active' : ''}`}
           >
             All SMS
           </Link>
+
           <Link 
-            to="/sessions" 
+            to="/settings"
+            className={`nav-link ${location.pathname === '/settings' ? 'active' : ''}`}
+          >
+            Settings
+          </Link>
+          <Link 
+            to="/sessions"
             className={`nav-link ${location.pathname === '/sessions' ? 'active' : ''}`}
           >
             Live
@@ -93,20 +121,8 @@ function Navbar() {
               <span className="nav-badge">{liveCount}</span>
             )}
           </Link>
-          <Link 
-            to="/settings" 
-            className={`nav-link ${location.pathname === '/settings' ? 'active' : ''}`}
-          >
-            Settings
-          </Link>
         </div>
 
-        <button
-          onClick={handleLogout}
-          className="logout-btn"
-        >
-          Logout
-        </button>
       </div>
     </nav>
   );
@@ -114,6 +130,7 @@ function Navbar() {
 
 function App() {
   const [authLoading, setAuthLoading] = useState(true);
+
   const [sessionId] = useState(() => {
     const existingId = localStorage.getItem("sessionId");
     if (!existingId) {
@@ -124,7 +141,7 @@ function App() {
     return existingId;
   });
 
-  // ⭐ WAIT FOR AUTH READY
+  // ⭐ AUTH READY
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -140,7 +157,7 @@ function App() {
     return () => unsub();
   }, [sessionId]);
 
-  // ⭐ FAST HEARTBEAT (EVERY 1 SECOND FOR INSTANT UPDATE)
+  // ⭐ HEARTBEAT UPDATE
   useEffect(() => {
     const updateHeartbeat = () => {
       const user = auth.currentUser;
@@ -154,9 +171,9 @@ function App() {
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  // ⭐ REMOVE SESSION ONLY WHEN TAB IS CLOSED
+  // ⭐ REMOVE SESSION ON CLOSE
   useEffect(() => {
-    const handleBeforeUnload = (e) => {
+    const handleBeforeUnload = () => {
       const user = auth.currentUser;
       if (user && sessionId) {
         navigator.sendBeacon || remove(ref(db, `activeSessions/${user.uid}/${sessionId}`));
@@ -181,7 +198,7 @@ function App() {
     };
   }, [sessionId]);
 
-  // ⭐ AUTH LOADING SCREEN
+  // ⭐ LOADING SCREEN
   if (authLoading) {
     return (
       <div className="loading">

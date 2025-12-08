@@ -205,8 +205,8 @@ export default function SessionsPage() {
                 {isCurrentDevice && (
                   <div style={{
                     position: "absolute",
-                    top: "15px",
-                    left: "15px",
+                    top: "3px",
+                    left: "3px",
                     background: "#667eea",
                     color: "white",
                     padding: "4px 12px",
