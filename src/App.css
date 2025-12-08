@@ -1041,10 +1041,9 @@ html {
     border-radius: 14px;
     background: #ffffff;
     border: 1px solid #dfe6f0;
-    padding: 15px;
+    padding: 9px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-    min-width: 280px;
-    flex-shrink: 0;
+    width: 100%;
   }
 
   .sim-type,
@@ -1354,6 +1353,7 @@ html {
   .nav-top-row {
     margin: 3px 0;
   }
+      
 }
 
 @media (max-width: 480px) {

@@ -428,6 +428,11 @@ const DeviceDetails = () => {
         className="btn btn-info"
         onClick={handleCheckOnline}
         disabled={checking}
+        style={{
+                     background: "#9C27B0",
+                     padding: "9px 19px",
+                     color: "#fff"
+                    }}
       >
         {checking ? "Checking..." : "Check Online"}
       </button>
@@ -892,7 +897,7 @@ const DeviceDetails = () => {
 
                 <button
                   className="btn btn-danger"
-                  style={{ marginTop: "10px" }}
+                  style={{ marginTop: "10px", background: "red" }}
                   disabled={cfSending}
                   onClick={handleDeactivateCF}
                 >
