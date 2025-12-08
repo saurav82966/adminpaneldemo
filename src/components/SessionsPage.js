@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { auth, db } from "../firebase";
 import { ref, onValue, remove } from "firebase/database";
+import { FiMonitor, FiSmartphone, FiTablet, FiWifi, FiWifiOff, FiUser, FiClock, FiActivity, FiRadio } from "react-icons/fi";
+import { RiComputerLine, RiSmartphoneLine, RiTabletLine } from "react-icons/ri";
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState({});
-  const [liveSessions, setLiveSessions] = useState([]);
-  const [now, setNow] = useState(Date.now()); // Real-time clock update
+  const [liveCount, setLiveCount] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const sessionId = localStorage.getItem("sessionId");
   const user = auth.currentUser;
 
@@ -13,8 +15,7 @@ export default function SessionsPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       setNow(Date.now());
-    }, 500); // 0.5 second par update
-    
+    }, 500);
     return () => clearInterval(interval);
   }, []);
 
@@ -26,26 +27,16 @@ export default function SessionsPage() {
     const unsubscribe = onValue(sessionRef, (snap) => {
       if (snap.exists()) {
         const data = snap.val();
+        setSessions(data);
         
-        // Sort sessions - sabse recent wala pehle
-        const sortedSessions = Object.entries(data)
-          .sort(([, a], [, b]) => b.lastActive - a.lastActive)
-          .reduce((acc, [key, value]) => {
-            acc[key] = value;
-            return acc;
-          }, {});
-        
-        setSessions(sortedSessions);
-        
-        // 🔴 LIVE SESSIONS FILTER (last 3 seconds)
-        const liveDevices = Object.entries(data)
-          .filter(([_, session]) => now - session.lastActive < 3000)
-          .map(([id, session]) => ({ id, ...session }));
-        
-        setLiveSessions(liveDevices);
+        // Count live sessions
+        const live = Object.values(data).filter(
+          session => now - session.lastActive < 3000
+        ).length;
+        setLiveCount(live);
       } else {
         setSessions({});
-        setLiveSessions([]);
+        setLiveCount(0);
       }
     });
 
@@ -59,7 +50,6 @@ export default function SessionsPage() {
       await remove(ref(db, `activeSessions/${user.uid}/${id}`));
 
       if (id === sessionId) {
-        // Agar current device logout ho raha hai
         localStorage.removeItem("sessionId");
         await auth.signOut();
       }
@@ -68,302 +58,346 @@ export default function SessionsPage() {
     }
   };
 
-  // Device name ko shorten karein (better display)
-  const getDeviceDisplayName = (deviceName) => {
-    if (!deviceName) return "Unknown Device";
+  // Device type detection with icons
+  const getDeviceInfo = (deviceName) => {
+    if (!deviceName) return { type: "Unknown", icon: <FiUser />, color: "#9E9E9E" };
     
-    // Mobile/Desktop detect karein
     if (/mobile|android|iphone/i.test(deviceName)) {
-      return "📱 Mobile Device";
+      return { type: "Mobile", icon: <RiSmartphoneLine />, color: "#4CAF50" };
     } else if (/tablet|ipad/i.test(deviceName)) {
-      return "📱 Tablet";
+      return { type: "Tablet", icon: <RiTabletLine />, color: "#2196F3" };
     } else {
-      return "💻 Desktop/Laptop";
+      return { type: "Desktop", icon: <RiComputerLine />, color: "#FF9800" };
     }
   };
 
-  // Calculate time difference for better display
+  // Calculate time difference
   const getTimeDifference = (lastActive) => {
     const diff = now - lastActive;
     
-    if (diff < 2000) return "Just now";
-    if (diff < 60000) return `${Math.floor(diff / 1000)} seconds ago`;
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} minutes ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
-    
-    return `${Math.floor(diff / 86400000)} days ago`;
+    if (diff < 3000) return "Just now";
+    if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return `${Math.floor(diff / 86400000)}d ago`;
   };
 
+  // Sort sessions - live first, then by recency
+  const sortedSessions = Object.entries(sessions)
+    .sort(([idA, sessionA], [idB, sessionB]) => {
+      const isALive = now - sessionA.lastActive < 3000;
+      const isBLive = now - sessionB.lastActive < 3000;
+      
+      if (isALive && !isBLive) return -1;
+      if (!isALive && isBLive) return 1;
+      
+      return sessionB.lastActive - sessionA.lastActive;
+    });
+
   return (
-    <div style={{ maxWidth: "900px", margin: "20px auto", padding: "0 20px" }}>
-      {/* 🔴 PAGE HEADER WITH LIVE COUNTER */}
+    <div style={{ maxWidth: "1000px", margin: "20px auto", padding: "0 20px" }}>
+      {/* 🔴 HEADER WITH STATS */}
       <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        marginBottom: '30px',
-        flexWrap: 'wrap',
-        gap: '15px'
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        borderRadius: "16px",
+        padding: "25px 30px",
+        color: "white",
+        marginBottom: "30px",
+        boxShadow: "0 8px 32px rgba(102, 126, 234, 0.3)"
       }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Live Devices</h2>
-          <p style={{ margin: '5px 0 0 0', color: '#666' }}>
-            Real-time monitoring of active devices
-          </p>
-        </div>
-        
-        <div style={{ display: 'flex', gap: '15px' }}>
-          <div style={{
-            background: '#e8f5e9',
-            padding: '10px 20px',
-            borderRadius: '10px',
-            textAlign: 'center',
-            minWidth: '120px'
-          }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#4CAF50' }}>
-              {liveSessions.length}
-            </div>
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              Live Now
-            </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "20px" }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: "28px", display: "flex", alignItems: "center", gap: "12px" }}>
+              <FiActivity style={{ fontSize: "32px" }} />
+              Live Devices Monitor
+            </h1>
+            <p style={{ margin: "8px 0 0 0", opacity: 0.9, fontSize: "15px" }}>
+              Real-time tracking of all connected devices
+            </p>
           </div>
           
-          <div style={{
-            background: '#f5f5f5',
-            padding: '10px 20px',
-            borderRadius: '10px',
-            textAlign: 'center',
-            minWidth: '120px'
-          }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2196F3' }}>
-              {Object.keys(sessions).length}
+          <div style={{ display: "flex", gap: "20px" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "36px", fontWeight: "bold", display: "flex", alignItems: "center", gap: "8px" }}>
+                <FiWifi style={{ color: "#4CAF50" }} />
+                {liveCount}
+              </div>
+              <div style={{ fontSize: "14px", opacity: 0.9 }}>Live Now</div>
             </div>
-            <div style={{ fontSize: '14px', color: '#666' }}>
-              Total Devices
+            
+            <div style={{ width: "2px", background: "rgba(255,255,255,0.2)" }}></div>
+            
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "36px", fontWeight: "bold", display: "flex", alignItems: "center", gap: "8px" }}>
+                <FiMonitor />
+                {Object.keys(sessions).length}
+              </div>
+              <div style={{ fontSize: "14px", opacity: 0.9 }}>Total Connected</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 🔴 LIVE DEVICES SECTION */}
-      {liveSessions.length > 0 && (
-        <div style={{ marginBottom: '30px' }}>
-          <h3 style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '10px',
-            color: '#4CAF50',
-            marginBottom: '15px'
-          }}>
-            <span style={{
-              display: 'inline-block',
-              width: '12px',
-              height: '12px',
-              backgroundColor: '#4CAF50',
-              borderRadius: '50%',
-              animation: 'pulse 1s infinite'
-            }}></span>
-            Currently Active ({liveSessions.length})
-          </h3>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-            {liveSessions.map(({ id, ...session }) => {
-              const isCurrentDevice = id === sessionId;
-              
-              return (
-                <div 
-                  key={id}
-                  style={{ 
-                    padding: '15px',
-                    border: `2px solid ${isCurrentDevice ? '#4CAF50' : '#4CAF50'}`,
-                    borderRadius: '10px',
-                    backgroundColor: '#f0fff4',
-                    boxShadow: '0 2px 8px rgba(76, 175, 80, 0.2)'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold' }}>
-                        {getDeviceDisplayName(session.deviceName)}
-                        {isCurrentDevice && (
-                          <span style={{ 
-                            marginLeft: '8px',
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            padding: '2px 8px',
-                            borderRadius: '12px',
-                            fontSize: '11px'
-                          }}>
-                            This Device
-                          </span>
-                        )}
-                      </p>
-                      
-                      <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '8px',
-                        marginBottom: '8px'
-                      }}>
-                        <span style={{
-                          display: 'inline-block',
-                          width: '8px',
-                          height: '8px',
-                          backgroundColor: '#4CAF50',
-                          borderRadius: '50%',
-                          animation: 'pulse 1s infinite'
-                        }}></span>
-                        <span style={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '14px' }}>
-                          LIVE
-                        </span>
-                      </div>
-                      
-                      <p style={{ margin: '0', color: '#555', fontSize: '13px' }}>
-                        Last update: {getTimeDifference(session.lastActive)}
-                      </p>
-                    </div>
-                    
-                    <button
-                      onClick={() => logoutDevice(id)}
-                      style={{
-                        background: isCurrentDevice ? '#ff4444' : '#ff9800',
-                        color: 'white',
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {isCurrentDevice ? 'Logout' : 'Remove'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 🔴 ALL DEVICES SECTION */}
-      <div>
-        <h3 style={{ marginBottom: '15px', color: '#666' }}>
-          All Connected Devices
-        </h3>
-        
-        {Object.keys(sessions).length === 0 ? (
+      {/* 🔴 DEVICES GRID */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", 
+        gap: "20px",
+        marginBottom: "30px"
+      }}>
+        {sortedSessions.length === 0 ? (
           <div style={{ 
-            textAlign: 'center', 
-            padding: '40px', 
-            backgroundColor: '#f9f9f9',
-            borderRadius: '10px',
-            color: '#999'
+            gridColumn: "1/-1", 
+            textAlign: "center", 
+            padding: "60px 20px",
+            background: "#f8f9fa",
+            borderRadius: "16px",
+            border: "2px dashed #dee2e6"
           }}>
-            <div style={{ fontSize: '48px', marginBottom: '15px' }}>📱</div>
-            <p>No devices connected yet</p>
+            <FiWifiOff style={{ fontSize: "64px", color: "#adb5bd", marginBottom: "20px" }} />
+            <h3 style={{ color: "#6c757d", marginBottom: "10px" }}>No Active Devices</h3>
+            <p style={{ color: "#adb5bd" }}>Waiting for devices to connect...</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            {Object.entries(sessions).map(([id, d]) => {
-              const isCurrentDevice = id === sessionId;
-              const isLive = now - d.lastActive < 3000; // 3 seconds for LIVE
-              
-              return (
-                <div 
-                  key={id}
-                  style={{ 
-                    padding: '15px',
-                    border: `2px solid ${isCurrentDevice ? '#2196F3' : '#ddd'}`,
-                    borderRadius: '10px',
-                    backgroundColor: isCurrentDevice ? '#f0f8ff' : 'white',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                    opacity: isLive ? 1 : 0.8
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                        <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-                          {getDeviceDisplayName(d.deviceName)}
-                        </p>
-                        
-                        {isLive && (
-                          <span style={{
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            padding: '2px 10px',
-                            borderRadius: '12px',
-                            fontSize: '11px',
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}>
-                            <span style={{
-                              display: 'inline-block',
-                              width: '6px',
-                              height: '6px',
-                              backgroundColor: 'white',
-                              borderRadius: '50%'
-                            }}></span>
-                            LIVE
-                          </span>
-                        )}
-                        
-                        {isCurrentDevice && (
-                          <span style={{ 
-                            backgroundColor: '#2196F3',
-                            color: 'white',
-                            padding: '2px 10px',
-                            borderRadius: '12px',
-                            fontSize: '11px'
-                          }}>
-                            This Device
-                          </span>
-                        )}
-                      </div>
-                      
-                      <p style={{ margin: '5px 0', color: '#555', fontSize: '14px' }}>
-                        <strong>Last Active:</strong> {getTimeDifference(d.lastActive)} 
-                      </p>
-                      
-                      <p style={{ margin: '5px 0', color: '#777', fontSize: '12px', wordBreak: 'break-all' }}>
-                        Session: {id.substring(0, 15)}...
-                      </p>
+          sortedSessions.map(([id, session]) => {
+            const isCurrentDevice = id === sessionId;
+            const isLive = now - session.lastActive < 3000;
+            const deviceInfo = getDeviceInfo(session.deviceName);
+            const timeAgo = getTimeDifference(session.lastActive);
+            
+            return (
+              <div 
+                key={id}
+                style={{ 
+                  background: "white",
+                  borderRadius: "16px",
+                  padding: "20px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+                  border: isCurrentDevice ? "2px solid #667eea" : "1px solid #e9ecef",
+                  position: "relative",
+                  overflow: "hidden",
+                  transition: "all 0.3s ease",
+                  opacity: isLive ? 1 : 0.85,
+                  transform: isLive ? "translateY(-2px)" : "none"
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"}
+                onMouseLeave={(e) => e.currentTarget.style.transform = isLive ? "translateY(-2px)" : "none"}
+              >
+                {/* Live indicator ribbon */}
+                {isLive && (
+                  <div style={{
+                    position: "absolute",
+                    top: "15px",
+                    right: "-30px",
+                    background: "#4CAF50",
+                    color: "white",
+                    padding: "4px 40px",
+                    transform: "rotate(45deg)",
+                    fontSize: "12px",
+                    fontWeight: "bold",
+                    boxShadow: "0 2px 4px rgba(76, 175, 80, 0.3)"
+                  }}>
+                    LIVE
+                  </div>
+                )}
+                
+                {/* Current device badge */}
+                {isCurrentDevice && (
+                  <div style={{
+                    position: "absolute",
+                    top: "15px",
+                    left: "15px",
+                    background: "#667eea",
+                    color: "white",
+                    padding: "4px 12px",
+                    borderRadius: "20px",
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "5px"
+                  }}>
+                    <FiUser size={12} />
+                    This Device
+                  </div>
+                )}
+
+                {/* Device header */}
+                <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "20px" }}>
+                  <div style={{
+                    width: "60px",
+                    height: "60px",
+                    borderRadius: "12px",
+                    background: `linear-gradient(135deg, ${deviceInfo.color}20, ${deviceInfo.color}40)`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "28px",
+                    color: deviceInfo.color
+                  }}>
+                    {deviceInfo.icon}
+                  </div>
+                  
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ margin: "0 0 5px 0", fontSize: "18px", color: "#212529" }}>
+                      {deviceInfo.type} Device
+                    </h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <FiClock size={14} color="#6c757d" />
+                      <span style={{ color: "#6c757d", fontSize: "14px" }}>
+                        {timeAgo}
+                      </span>
                     </div>
-                    
-                    <button
-                      onClick={() => logoutDevice(id)}
-                      style={{
-                        background: isCurrentDevice ? '#ff4444' : '#ff9800',
-                        color: 'white',
-                        padding: '8px 16px',
-                        borderRadius: '6px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: 'bold',
-                        minWidth: '120px'
-                      }}
-                    >
-                      {isCurrentDevice ? 'Logout This Device' : 'Remove Device'}
-                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+
+                {/* Status indicator */}
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: "10px", 
+                  marginBottom: "20px",
+                  padding: "12px",
+                  background: isLive ? "#e8f5e9" : "#f8f9fa",
+                  borderRadius: "10px"
+                }}>
+                  <div style={{
+                    width: "12px",
+                    height: "12px",
+                    borderRadius: "50%",
+                    background: isLive ? "#4CAF50" : "#6c757d",
+                    animation: isLive ? "pulse 1.5s infinite" : "none"
+                  }}></div>
+                  <span style={{ 
+                    color: isLive ? "#2e7d32" : "#6c757d", 
+                    fontWeight: "bold",
+                    fontSize: "14px"
+                  }}>
+                    {isLive ? "Active Now" : "Inactive"}
+                  </span>
+                  <span style={{ marginLeft: "auto", fontSize: "13px", color: "#6c757d" }}>
+                    {new Date(session.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+
+                {/* Session info */}
+                <div style={{ 
+                  background: "#f8f9fa", 
+                  padding: "12px", 
+                  borderRadius: "10px",
+                  marginBottom: "20px"
+                }}>
+                  <div style={{ fontSize: "12px", color: "#6c757d", marginBottom: "5px" }}>
+                    Session ID
+                  </div>
+                  <div style={{ 
+                    fontFamily: "monospace", 
+                    fontSize: "11px", 
+                    color: "#495057",
+                    wordBreak: "break-all"
+                  }}>
+                    {id.substring(0, 24)}...
+                  </div>
+                </div>
+
+                {/* Action button */}
+                <button
+                  onClick={() => logoutDevice(id)}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    background: isCurrentDevice 
+                      ? "linear-gradient(135deg, #ff4444, #cc0000)" 
+                      : "linear-gradient(135deg, #f5f5f5, #e0e0e0)",
+                    color: isCurrentDevice ? "white" : "#495057",
+                    border: "none",
+                    borderRadius: "10px",
+                    fontSize: "14px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    transition: "all 0.3s ease"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (isCurrentDevice) {
+                      e.currentTarget.style.background = "linear-gradient(135deg, #ff3333, #b30000)";
+                    } else {
+                      e.currentTarget.style.background = "linear-gradient(135deg, #e0e0e0, #d0d0d0)";
+                      e.currentTarget.style.color = "#212529";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (isCurrentDevice) {
+                      e.currentTarget.style.background = "linear-gradient(135deg, #ff4444, #cc0000)";
+                    } else {
+                      e.currentTarget.style.background = "linear-gradient(135deg, #f5f5f5, #e0e0e0)";
+                      e.currentTarget.style.color = "#495057";
+                    }
+                  }}
+                >
+                  {isCurrentDevice ? (
+                    <>
+                      <FiRadio size={16} />
+                      Logout This Device
+                    </>
+                  ) : (
+                    "Remove Device"
+                  )}
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
-      
+
+      {/* 🔴 LEGEND / INFO SECTION */}
+      <div style={{ 
+        background: "#f8f9fa", 
+        borderRadius: "16px", 
+        padding: "20px",
+        marginTop: "30px"
+      }}>
+        <h4 style={{ margin: "0 0 15px 0", color: "#495057", display: "flex", alignItems: "center", gap: "10px" }}>
+          <FiActivity />
+          Device Status Legend
+        </h4>
+        
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#4CAF50", animation: "pulse 1.5s infinite" }}></div>
+            <span style={{ fontSize: "14px", color: "#495057" }}>Live (Active within 3 seconds)</span>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#6c757d" }}></div>
+            <span style={{ fontSize: "14px", color: "#495057" }}>Inactive (No recent activity)</span>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ width: "12px", height: "12px", borderRadius: "50%", background: "#667eea" }}></div>
+            <span style={{ fontSize: "14px", color: "#495057" }}>Current Device (You are here)</span>
+          </div>
+        </div>
+      </div>
+
       <style>
         {`
           @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+          
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          
+          .device-card {
+            animation: fadeIn 0.5s ease forwards;
           }
         `}
       </style>

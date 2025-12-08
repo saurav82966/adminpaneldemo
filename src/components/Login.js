@@ -6,16 +6,22 @@ import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const sessionId = localStorage.getItem("sessionId");
+  // Generate sessionId if not available
+  let sessionId = localStorage.getItem("sessionId");
+  if (!sessionId) {
+    sessionId = Math.random().toString(36).substring(2);
+    localStorage.setItem("sessionId", sessionId);
+  }
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         await registerSession(user);
-        await loadDbPath(user.uid);
+        await loadSessionVersion(user.uid);
         navigate("/devices", { replace: true });
       }
     });
@@ -23,30 +29,24 @@ export default function Login() {
     return () => unsub();
   }, []);
 
-  // ⭐ Load the user's dbPath from Firebase and store in localStorage
-  const loadDbPath = async (uid) => {
-    try {
-      const snap = await get(ref(db, "users/" + uid));
-      if (snap.exists()) {
-        const userData = snap.val();
-        localStorage.setItem("dbPath_" + uid, userData.dbPath);
-      }
-    } catch (err) {
-      console.log("Failed to load dbPath:", err);
+  const loadSessionVersion = async (uid) => {
+    const snap = await get(ref(db, "users/" + uid));
+    if (snap.exists()) {
+      const data = snap.val();
+      localStorage.setItem("sessionVersion_" + uid, data.sessionVersion || 1);
+      localStorage.setItem("dbPath_" + uid, data.dbPath);
     }
   };
 
-  // ⭐ Register this device session
   const registerSession = async (user) => {
     const deviceName = navigator.userAgent;
 
     await set(ref(db, `activeSessions/${user.uid}/${sessionId}`), {
-      deviceName: deviceName,
+      deviceName,
       lastActive: Date.now()
     });
   };
 
-  // ⭐ Login handler
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -54,7 +54,7 @@ export default function Login() {
       const userCred = await signInWithEmailAndPassword(auth, email, password);
 
       await registerSession(userCred.user);
-      await loadDbPath(userCred.user.uid);
+      await loadSessionVersion(userCred.user.uid);
 
       navigate("/devices");
     } catch (err) {

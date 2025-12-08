@@ -7,37 +7,73 @@ import { useNavigate } from "react-router-dom";
 
 export default function Register() {
   const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [dbPath, setDbPath] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // ⭐ Already logged-in user register page mat dekhe
+  // ⭐ Already logged-in user → register page na dikhaye
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        navigate("/devices", { replace: true });
-      }
+      if (user) navigate("/devices", { replace: true });
     });
     return () => unsub();
   }, [navigate]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
+
+    // Basic validations
+    if (password.length < 6) {
+      alert("Password must be at least 6 characters long");
+      return;
+    }
+
+    if (dbPath.trim() === "") {
+      alert("Database Path cannot be empty");
+      return;
+    }
+
+    setLoading(true);
+
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // CREATE AUTH USER
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        email.toLowerCase(),
+        password
+      );
       const user = userCredential.user;
 
-      // ⭐ Save user dbPath in Firebase
+      // SAVE USER DATA IN DATABASE
       await set(ref(db, "users/" + user.uid), {
-        email: email,
-        dbPath: dbPath
+        email: email.toLowerCase(),
+        dbPath: dbPath.trim(),
+        sessionVersion: 1 // ⭐ MUST for password-change logout logic
       });
 
       alert("Account Created Successfully!");
+
+      // Clear form
+      setEmail("");
+      setPassword("");
+      setDbPath("");
+
       navigate("/login");
     } catch (err) {
-      alert("Registration failed");
+      console.error("Register Error:", err);
+
+      let msg = "Registration failed";
+
+      if (err.code === "auth/email-already-in-use") msg = "Email already exists";
+      if (err.code === "auth/invalid-email") msg = "Invalid email address";
+      if (err.code === "auth/weak-password") msg = "Weak password";
+
+      alert(msg);
     }
+
+    setLoading(false);
   };
 
   return (
@@ -57,13 +93,13 @@ export default function Register() {
         <input
           type="password"
           className="form-input"
-          placeholder="Password"
+          placeholder="Password (min 6 characters)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
         />
 
-        {/* ⭐ Database Path */}
+        {/* ⭐ DATABASE PATH */}
         <input
           type="text"
           className="form-input"
@@ -73,7 +109,9 @@ export default function Register() {
           required
         />
 
-        <button className="btn btn-primary" type="submit">Create Account</button>
+        <button className="btn btn-primary" type="submit" disabled={loading}>
+          {loading ? "Creating..." : "Create Account"}
+        </button>
       </form>
 
       <p style={{ marginTop: "10px" }}>
